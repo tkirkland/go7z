@@ -59,10 +59,10 @@ screwdriver. Do not grab the handle back.
   `parity: N of M`. A line is registered by adding its key to the `checks`
   map in an `init()` of a `parity/*_test.go` file (see
   `parity/codec_lzma_test.go`). Current baseline: **3 of 84**.
-- Commits: `e24c1f4` (harness, fixtures, oracle verifier),
-  `cf112fa` (LZMA/LZMA2 decoders), `0d99726` (LZMA encoder, codec/LZMA),
-  `5409d15` (LZMA2 encoder, codec/LZMA2), the handoff updates, then the
-  Copy coder (`copycoder/`, codec/Copy).
+- Commits: `e5c143d` (harness, fixtures, oracle verifier),
+  `7eeb1b3` (LZMA/LZMA2 decoders), `49f8072` (LZMA encoder, codec/LZMA),
+  `998f516` (LZMA2 encoder, codec/LZMA2), the handoff updates, then
+  `106f608` (Copy coder, `copycoder/`, codec/Copy).
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
