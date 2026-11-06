@@ -11,9 +11,14 @@ definition of correct.
 ## Status
 
 Parity is tracked as a scoreboard over the 84 codecs, formats, hashers,
-commands and switches that `7zr` lists. Current state: **5 of 84**.
+commands and switches that `7zr` lists, proven in two lanes: against the
+32-bit build (`7zr.exe`) and against the 64-bit build (`x64/7za.exe`
+from `7z2605-extra.7z`). The two builds differ where the source branches
+on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
+LZMA2 block layout on inputs of hundreds of MB. Current state: **32-bit
+lane 5 of 84; 64-bit lane 0 of 84** (its harness is not built yet).
 
-| Line          | Proof                                                   |
+| Line (32-bit) | Proof                                                   |
 | ------------- | ------------------------------------------------------- |
 | codec/Copy    | `copycoder`: 13 cases identical to the oracle           |
 | codec/LZMA    | `lzma`: encoder and decoder, 26 cases identical         |
