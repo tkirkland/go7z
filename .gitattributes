@@ -1,0 +1,9 @@
+# Pin line endings to LF regardless of core.autocrlf on the host.
+* text=auto eol=lf
+
+# Binary test fixtures and oracle artifacts.
+*.7z binary
+*.xz binary
+*.lzma binary
+*.exe binary
+*.bin binary

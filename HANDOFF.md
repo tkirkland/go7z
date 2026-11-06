@@ -199,20 +199,35 @@ reproduced from observation and from the format documentation. The oracle
 binary `7zr` contains no LGPL-only codecs (no Deflate, BZip2, PPMd, ZSTD),
 so every codec on the parity list has a public-domain source file:
 
-| Codec / format                            | Public-domain SDK source                                                                                                                                           |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| LZMA, LZMA2                               | `lzma/`: decoder and encoder ported (`C/LzmaDec.c`, `C/Lzma2Dec.c`, `C/LzFind.c`, `C/LzmaEnc.c`, `C/Lzma2Enc.c`)                                                   |
-| Copy                                      |                                                                                                                                                                    |
-| BCJ (x86)                                 | `C/Bra86.c`                                                                                                                                                        |
-| BCJ2                                      | `C/Bcj2Enc.c`, `C/Bcj2.c`                                                                                                                                          |
-| PPC, IA64, ARM, ARMT, SPARC, ARM64, RISCV | `C/Bra.c`, `C/BraIA64.c`                                                                                                                                           |
-| Delta                                     | `C/Delta.c`                                                                                                                                                        |
-| Swap2, Swap4                              | trivial byte swap (no SDK file; semantics from `7zr` output)                                                                                                       |
-| 7zAES, AES256CBC                          | `C/Aes.c`, `C/Sha256.c`; key derivation as observed in the discarded repo's session (SHA-256 over salt+password(UTF-16LE)+counter, 2^19 rounds, salt 0 bytes, IV 16 bytes by default): re-verify against this oracle before relying on it |
-| xz format                                 | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`, `C/XzIn.c`, `C/XzCrc64.c`                                                                                                      |
-| lzma, lzma86 formats                      | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the 13-byte .lzma header                                                                                                      |
-| CRC32, CRC64, SHA-256 hashers             | `C/7zCrc.c`, `C/XzCrc64.c`, `C/Sha256.c` (Go stdlib gives identical values; identity is on output format)                                                          |
-| Split volumes                             | format: raw byte split, names `.001`, `.002`; semantics observed from the oracle                                                                                   |
+| Codec / format                | Public-domain SDK source                   |
+| ----------------------------- | ------------------------------------------ |
+| LZMA, LZMA2                   | `lzma/`: decoder and encoder ported        |
+|                               | (`C/LzmaDec.c`, `C/Lzma2Dec.c`,            |
+|                               | `C/LzFind.c`, `C/LzmaEnc.c`,               |
+|                               | `C/Lzma2Enc.c`)                            |
+| Copy                          |                                            |
+| BCJ (x86)                     | `C/Bra86.c`                                |
+| BCJ2                          | `C/Bcj2Enc.c`, `C/Bcj2.c`                  |
+| PPC, IA64, ARM, ARMT,         | `C/Bra.c`, `C/BraIA64.c`                   |
+| SPARC, ARM64, RISCV           |                                            |
+| Delta                         | `C/Delta.c`                                |
+| Swap2, Swap4                  | trivial byte swap (no SDK file;            |
+|                               | semantics from `7zr` output)               |
+| 7zAES, AES256CBC              | `C/Aes.c`, `C/Sha256.c`; key derivation as |
+|                               | observed in the discarded repo's session   |
+|                               | (SHA-256 over salt+password(UTF-16LE)+     |
+|                               | counter, 2^19 rounds, salt 0 bytes, IV 16  |
+|                               | bytes by default): re-verify against this  |
+|                               | oracle before relying on it                |
+| xz format                     | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`,        |
+|                               | `C/XzIn.c`, `C/XzCrc64.c`                  |
+| lzma, lzma86 formats          | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the   |
+|                               | 13-byte .lzma header                       |
+| CRC32, CRC64, SHA-256 hashers | `C/7zCrc.c`, `C/XzCrc64.c`, `C/Sha256.c`   |
+|                               | (Go stdlib gives identical values;         |
+|                               | identity is on output format)              |
+| Split volumes                 | format: raw byte split, names `.001`,      |
+|                               | `.002`; semantics observed from the oracle |
 
 If a future line ever needs an LGPL encoder, stop and tell the user; do not
 port it and do not pretend a different encoder is the same thing.
@@ -240,7 +255,8 @@ Nothing else.
 - [ ] Swap4: not done
 - [ ] Delta: not done
 - [ ] 7zAES: not done
-- [ ] AES256CBC (`-m0=AES256CBC` as a coder; same cipher as 7zAES without key derivation): not done
+- [ ] AES256CBC (`-m0=AES256CBC` as a coder; same cipher as 7zAES
+      without key derivation): not done
 
 ### Filter automation (what `-mf` does by default)
 
@@ -272,20 +288,23 @@ Nothing else.
 ### Switches (`7zr` usage)
 
 - [ ] -m (every parameter the oracle accepts after `-m`, observed from it;
-      the LZMA/LZMA2 subset is mapped in `internal/oracletest.ParseMethod`): not done
+      the LZMA/LZMA2 subset is mapped in
+      `internal/oracletest.ParseMethod`): not done
 - [ ] -o, -y, -slt: not done
 - [ ] -p, -mhe: not done
 - [ ] -v: not done
 - [ ] -t: not done
 - [ ] -r, -i, -x, -ai, -ax, -an, -ao, -sa, -spd, -spe, -spf, -ssc: not done
 - [ ] -si, -so, -w, -sdel, -sse, -ssw, -stl, -ssp, -snh, -snl, -sni, -sns: not done
-- [ ] -bb, -bd, -bs, -bt, -scc, -scs, -scrc, -slp, -stm, -stx, -sfx, -seml, --: not done
+- [ ] -bb, -bd, -bs, -bt, -scc, -scs, -scrc, -slp, -stm, -stx, -sfx,
+      -seml, --: not done
 
 ### Build identity
 
 - [ ] packed streams identical to the x86 oracle: not done
 - [ ] verified against a 64-bit 7-Zip binary (none can be extracted without
-      BCJ; becomes possible once BCJ is done: `7z2605-extra.7z` holds `x64/7za.exe`): not done
+      BCJ; becomes possible once BCJ is done: `7z2605-extra.7z` holds
+      `x64/7za.exe`): not done
 
 ## Order of work
 
