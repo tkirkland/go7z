@@ -10,6 +10,16 @@ import (
 	"strings"
 )
 
+// Omitted lists the fixture lines the user removed from scope (2026-11-06:
+// "omit ppc, ia64, sparc, riscv"). TestParity skips them and names them
+// in its output; they are never counted as passes.
+var Omitted = map[string]string{
+	"codec/PPC":   "omitted by the user on 2026-11-06",
+	"codec/IA64":  "omitted by the user on 2026-11-06",
+	"codec/SPARC": "omitted by the user on 2026-11-06",
+	"codec/RISCV": "omitted by the user on 2026-11-06",
+}
+
 // Entry is one walked line from the parity fixtures.
 type Entry struct {
 	File    string // "7zr-i.txt" or "7zr-usage.txt"

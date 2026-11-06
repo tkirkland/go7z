@@ -120,8 +120,9 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   fixtures equal its live output, and prints `parity: N of M`. A line is
   registered by adding its key to the `checks` map in an `init()` of a
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`). It has no
-  lane dimension yet. Current baseline: **32-bit lane 5 of 84; 64-bit
-  lane 0 of 84 (no harness)**.
+  lane dimension yet. Four codecs are omitted by the user (PPC, IA64,
+  SPARC, RISCV), so the total is 80. Current baseline: **32-bit lane 5
+  of 80; 64-bit lane 0 of 80 (no harness)**.
 - `internal/oracle`: `Binary(root)` finds and hash-verifies `7zr.exe`;
   `Run`, `RunBinary`. Single oracle, no lane parameter.
 - Commits: `e5c143d` (harness, fixtures, oracle verifier),
@@ -339,12 +340,15 @@ them:
   (`7za-x64-i.txt`, `7za-x64-usage.txt`), once the harness line is done.
 
 `go test -tags oracle -run TestParity ./...` walks those lists: 84 lines
-(6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches), per lane.
+(6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches) minus
+the four codecs the user omitted on 2026-11-06 (PPC, IA64, SPARC,
+RISCV), so 80 per lane.
 Each line is a pass or a fail in each lane. A line the module rejects is a
 fail. A line where the module's bytes differ from that lane's oracle is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
 end (today it prints one unlabelled `parity: N of M` for the 32-bit lane
-only). Parity is `M of M` in both lanes. Report both numbers and nothing
+only). Parity is `M of M` in both lanes. Omitted lines are listed by
+name in the output, never counted as passes. Report both numbers and nothing
 softer.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
@@ -373,8 +377,8 @@ checklist has a public-domain source file:
 |                               | the raw `-m0=Copy` stream of a .7z         |
 | BCJ (x86)                     | `bra/`: ported (`C/Bra86.c`)               |
 | BCJ2                          | `C/Bcj2Enc.c`, `C/Bcj2.c`                  |
-| PPC, IA64, ARM, ARMT,         | `C/Bra.c`, `C/BraIA64.c`                   |
-| SPARC, ARM64, RISCV           |                                            |
+| ARM, ARMT, ARM64              | `C/Bra.c`                                  |
+| PPC, IA64, SPARC, RISCV       | omitted by the user (2026-11-06)           |
 | Delta                         | `C/Delta.c`                                |
 | Swap2, Swap4                  | trivial byte swap (no SDK file;            |
 |                               | semantics from `7zr` output)               |
@@ -419,7 +423,7 @@ run, so every box is open.
       committed and checked against live output like the 32-bit ones:
       not done
 - [ ] TestParity walks every line in both lanes, subtests `32/<key>` and
-      `64/<key>`, prints `parity 32: N of 84` and `parity 64: N of 84`:
+      `64/<key>`, prints `parity 32: N of 80` and `parity 64: N of 80`:
       not done
 - [ ] `oracleSizeT` becomes a per-encoder build setting (32 or 64) that
       the lane selects; the 64-bit setting reproduces 2^27/2^28/2^28 at
@@ -430,7 +434,7 @@ run, so every box is open.
       dictionaries are reached, and one at mx6 with default threads so
       the block layout (lane item 3) is reached: not done
 
-### Codecs (`7zr i`)
+### Codecs (`7zr i`; 13 counted, 4 omitted)
 
 - [ ] Copy: 32 done: `TestEncodeOracleCopy` (parity key `codec/Copy`);
       64 not done
@@ -441,13 +445,12 @@ run, so every box is open.
 - [ ] BCJ: 32 done: `TestEncodeOracleBCJ` (parity key `codec/BCJ`);
       64 not done
 - [ ] BCJ2: 32 not done; 64 not done
-- [ ] PPC: 32 not done; 64 not done
-- [ ] IA64: 32 not done; 64 not done
 - [ ] ARM: 32 not done; 64 not done
 - [ ] ARMT: 32 not done; 64 not done
-- [ ] SPARC: 32 not done; 64 not done
 - [ ] ARM64: 32 not done; 64 not done
-- [ ] RISCV: 32 not done; 64 not done
+- PPC, IA64, SPARC, RISCV: omitted by the user on 2026-11-06 ("omit
+  ppc, ia64, sparc, riscv"). Not counted in either lane; TestParity
+  skips them (`omitted` in `parity/parity.go`) and the total is 80.
 - [ ] Swap2: 32 not done; 64 not done
 - [ ] Swap4: 32 not done; 64 not done
 - [ ] Delta: 32 not done; 64 not done

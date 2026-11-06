@@ -58,9 +58,14 @@ func TestParity(t *testing.T) {
 	}
 
 	pass := 0
-	total := len(entries)
-	var failures []string
+	total := 0
+	var failures, omitted []string
 	for _, e := range entries {
+		if _, skip := Omitted[e.Key]; skip {
+			omitted = append(omitted, e.Key)
+			continue
+		}
+		total++
 		ok := t.Run(e.Key, func(t *testing.T) {
 			if oerr != nil {
 				t.Errorf("oracle/fixture problem: %v", oerr)
@@ -80,6 +85,9 @@ func TestParity(t *testing.T) {
 		}
 	}
 	t.Logf("parity: %d of %d", pass, total)
+	if len(omitted) > 0 {
+		t.Logf("omitted lines (not counted): %s", strings.Join(omitted, ", "))
+	}
 	if len(failures) > 0 {
 		t.Logf("failing lines: %s", strings.Join(failures, ", "))
 	}

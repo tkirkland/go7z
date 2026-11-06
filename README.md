@@ -15,8 +15,10 @@ commands and switches that `7zr` lists, proven in two lanes: against the
 32-bit build (`7zr.exe`) and against the 64-bit build (`x64/7za.exe`
 from `7z2605-extra.7z`). The two builds differ where the source branches
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
-LZMA2 block layout on inputs of hundreds of MB. Current state: **32-bit
-lane 5 of 84; 64-bit lane 0 of 84** (its harness is not built yet).
+LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
+SPARC, RISCV) are omitted by decision, leaving 80 lines. Current state:
+**32-bit lane 5 of 80; 64-bit lane 0 of 80** (its harness is not built
+yet).
 
 | Line (32-bit) | Proof                                                   |
 | ------------- | ------------------------------------------------------- |
@@ -26,7 +28,7 @@ lane 5 of 84; 64-bit lane 0 of 84** (its harness is not built yet).
 | codec/BCJ     | `bra`: x86 converter, 37 cases identical                |
 | format/7z     | `sevenzip`: 89 archives identical, all read back        |
 
-Everything else (the other branch filters, BCJ2, Delta, encryption,
+Everything else (the ARM branch filters, BCJ2, Swap, Delta, encryption,
 xz/lzma formats, the CLI commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
