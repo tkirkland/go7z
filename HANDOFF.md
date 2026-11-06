@@ -58,10 +58,11 @@ screwdriver. Do not grab the handle back.
   the oracle hash and that the fixtures equal live oracle output, and prints
   `parity: N of M`. A line is registered by adding its key to the `checks`
   map in an `init()` of a `parity/*_test.go` file (see
-  `parity/codec_lzma_test.go`). Current baseline: **2 of 84**.
+  `parity/codec_lzma_test.go`). Current baseline: **3 of 84**.
 - Commits: `e24c1f4` (harness, fixtures, oracle verifier),
   `cf112fa` (LZMA/LZMA2 decoders), `0d99726` (LZMA encoder, codec/LZMA),
-  `5409d15` (LZMA2 encoder, codec/LZMA2), then this handoff's updates.
+  `5409d15` (LZMA2 encoder, codec/LZMA2), the handoff updates, then the
+  Copy coder (`copycoder/`, codec/Copy).
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -111,9 +112,11 @@ screwdriver. Do not grab the handle back.
   5. `ReduceSize` = input size and `SetDataSize` = input size reproduce
      the oracle for 7z and xz; for multi-block LZMA2 the per-block expected
      size is the block length (MtCoder uses direct input per block).
+- Copy was marked without the container: the raw packed stream of a
+  single-file `-m0=Copy` .7z (`SevenZRawStream`) is the identity, 13 cases
+  (`-m0=Copy` at mx0/1/5/9, bare `-mx0`, sizes 1/100/4096/300000).
 - Critical path from here: the 7z container (`DOC/7zFormat.txt` +
-  observation), which is what makes Copy observable; then mark Copy (the
-  top not-done codec line); then BCJ and the other filters (`Bra86.c`,
+  observation); then BCJ and the other filters (`Bra86.c`,
   `Bra.c`, `BraIA64.c`, `Bcj2Enc.c`, `Delta.c`), each registered as a parity
   line the same way the codec lines are. No container observations have
   been recorded yet; the next session makes them from the oracle.
@@ -182,7 +185,7 @@ Parity is defined by the oracle binary, not by anyone's description of it:
 is a pass or a fail. A line the module rejects is a fail. A line where the
 module's bytes differ from the oracle's is a fail. The test prints
 `N of M` at the end. Parity is `M of M`. Report that number and nothing
-softer. The baseline recorded in this repo is 2 of 84.
+softer. The baseline recorded in this repo is 3 of 84.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
 and IV; `b` benchmark prints timings), the line passes when: the module
@@ -205,7 +208,9 @@ so every codec on the parity list has a public-domain source file:
 |                               | (`C/LzmaDec.c`, `C/Lzma2Dec.c`,            |
 |                               | `C/LzFind.c`, `C/LzmaEnc.c`,               |
 |                               | `C/Lzma2Enc.c`)                            |
-| Copy                          |                                            |
+| Copy                          | `copycoder/`: identity (no SDK file; C++   |
+|                               | CopyCoder.cpp is LGPL); verified against   |
+|                               | the raw `-m0=Copy` stream of a .7z         |
 | BCJ (x86)                     | `C/Bra86.c`                                |
 | BCJ2                          | `C/Bcj2Enc.c`, `C/Bcj2.c`                  |
 | PPC, IA64, ARM, ARMT,         | `C/Bra.c`, `C/BraIA64.c`                   |
@@ -239,7 +244,7 @@ Nothing else.
 
 ### Codecs (`7zr i`)
 
-- [ ] Copy: not done
+- [x] Copy: done: `TestEncodeOracleCopy` (parity key `codec/Copy`)
 - [x] LZMA: done: `TestEncodeOracleLZMA` (parity key `codec/LZMA`)
 - [x] LZMA2: done: `TestEncodeOracleLZMA2` (parity key `codec/LZMA2`)
 - [ ] BCJ: not done
@@ -311,8 +316,8 @@ Nothing else.
 Top to bottom. No reordering by what seems important. Each line: port the
 public-domain source faithfully, add its line to the parity test, run the
 oracle test, mark the line. Commit per line. The encoder is done and marks
-LZMA and LZMA2; Copy needs the 7z container to be observable, so the
-container is next, then Copy is marked, then move down. Never spend a
+LZMA and LZMA2; Copy is marked from the raw packed stream; the 7z
+container is next (it marks the 7z format line), then move down. Never spend a
 session on anything that marks no line.
 
 ## Reporting
