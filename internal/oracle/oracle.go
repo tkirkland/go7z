@@ -65,3 +65,15 @@ func Run(dir string, args ...string) ([]byte, error) {
 	err = cmd.Run()
 	return buf.Bytes(), err
 }
+
+// RunBinary executes the already verified oracle at path with args, using
+// dir as the working directory, and returns its combined output.
+func RunBinary(path, dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command(path, args...)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.Bytes(), err
+}

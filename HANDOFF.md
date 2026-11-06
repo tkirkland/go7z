@@ -58,11 +58,12 @@ screwdriver. Do not grab the handle back.
   the oracle hash and that the fixtures equal live oracle output, and prints
   `parity: N of M`. A line is registered by adding its key to the `checks`
   map in an `init()` of a `parity/*_test.go` file (see
-  `parity/codec_lzma_test.go`). Current baseline: **3 of 84**.
+  `parity/codec_lzma_test.go`). Current baseline: **4 of 84**.
 - Commits: `e5c143d` (harness, fixtures, oracle verifier),
   `7eeb1b3` (LZMA/LZMA2 decoders), `49f8072` (LZMA encoder, codec/LZMA),
-  `998f516` (LZMA2 encoder, codec/LZMA2), the handoff updates, then
-  `106f608` (Copy coder, `copycoder/`, codec/Copy).
+  `998f516` (LZMA2 encoder, codec/LZMA2), the handoff updates,
+  `106f608` (Copy coder, `copycoder/`, codec/Copy), then the 7z container
+  (`sevenzip/`, format/7z).
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -115,11 +116,55 @@ screwdriver. Do not grab the handle back.
 - Copy was marked without the container: the raw packed stream of a
   single-file `-m0=Copy` .7z (`SevenZRawStream`) is the identity, 13 cases
   (`-m0=Copy` at mx0/1/5/9, bare `-mx0`, sizes 1/100/4096/300000).
-- Critical path from here: the 7z container (`DOC/7zFormat.txt` +
-  observation); then BCJ and the other filters (`Bra86.c`,
+- `sevenzip/` package (format/7z): `reader.go` is a port of `7zArcIn.c`
+  and `7zDec.c` (`Open`, `Archive.Entries`, `Archive.Extract`; folders with
+  one Copy/LZMA/LZMA2 coder; filters and BCJ2 return `ErrUnsupported` until
+  their lines are done). `writer.go` (`NewWriter`, `AddPath`, `AddPathIn`,
+  `Write`, `Create`, `Options`) is built from `DOC/7zFormat.txt` plus
+  observation; there is no public-domain writer source. `number.go` has the
+  variable-length number and bit vectors. Proof: `TestOracle7z` / parity
+  `format/7z`, 58 cases byte-identical to the oracle's archives (Copy,
+  LZMA, LZMA2 at levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and
+  directories, nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`,
+  `-mtc=on`, `-mtm=off`, `-mmt1`, name ordering), and the module reads every
+  oracle archive back (names, sizes, CRCs, contents).
+- Container facts observed on the oracle (do not re-derive):
+  1. Header layout: kHeader, MainStreamsInfo (PackInfo with PackPos 0;
+     UnpackInfo with one coder per folder; SubStreamsInfo with
+     kNumUnpackStream only when some folder has != 1 streams, kSize for all
+     but the last stream of each folder, then kCRC all-defined for every
+     stream; folder CRCs are never written), FilesInfo (kEmptyStream and
+     kEmptyFile bit vectors when needed, never kAnti; kName; kCTime/kATime
+     only with -mtc/-mta; kMTime unless -mtm=off; kWinAttrib; kEnd).
+  2. kDummy padding before kName, each time property and kWinAttrib so that
+     the property's data starts 16-, 8- and 4-byte aligned from the header
+     start (rule in `hdr.skipToAligned`).
+  3. Coder records: Copy `01 00` (1-byte id), LZMA `23 03 01 01 05 <5>`,
+     LZMA2 `21 21 01 <1>`. Names are UTF-16LE with '/' separators (a
+     backslash argument is stored as '/').
+  4. Item order: directories, then empty files, then files with data, each
+     sorted by name with the separator lowest and letters compared in upper
+     case (`sub/q` < `subz` < `sub_x` < `_x`; `b` < `B2`). Ties between
+     names equal in upper case were not observed.
+  5. The header is LZMA-compressed only when the archive has two or more
+     items. Header coder: dictionary 1 MB (the record shows it reduced to
+     the header size), fb=273, normal parser, bt2, default mc (bt3 also
+     matched on a 74 KB header; 1 MB confirmed on a 3.3 MB header).
+  6. Solid blocks: files are added while the running total stays within the
+     limit. Default limit: LZMA max(dict<<7, 16 MB), LZMA2 max(dict<<8,
+     64 MB) with dict the level's dictionary (or -md), observed up to 200 MB;
+     no upper clamp observed. Copy is never solid. No file-count limit up to
+     5000 files.
+  7. The coder dictionary is reduced to the sum of all data file sizes when
+     solid, and to the largest data file when `-ms=off`, never to the
+     folder's own size. `SetDataSize` is the folder size.
+  8. Attributes are the raw Win32 attributes; times are raw FILETIMEs.
+- Critical path from here: BCJ and the other filters (`Bra86.c`,
   `Bra.c`, `BraIA64.c`, `Bcj2Enc.c`, `Delta.c`), each registered as a parity
-  line the same way the codec lines are. No container observations have
-  been recorded yet; the next session makes them from the oracle.
+  line the same way the codec lines are. The 7z container exposes them
+  through `-m0=<Filter>` once the reader and writer support multi-coder
+  folders (bonds); `readFolder` already parses bonds, `decodeFolder` and the
+  writer do not yet build them.
 
 ## How you fail, and the rule that stops each one
 
@@ -185,7 +230,7 @@ Parity is defined by the oracle binary, not by anyone's description of it:
 is a pass or a fail. A line the module rejects is a fail. A line where the
 module's bytes differ from the oracle's is a fail. The test prints
 `N of M` at the end. Parity is `M of M`. Report that number and nothing
-softer. The baseline recorded in this repo is 3 of 84.
+softer. The baseline recorded in this repo is 4 of 84.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
 and IV; `b` benchmark prints timings), the line passes when: the module
@@ -273,7 +318,7 @@ Nothing else.
 
 ### Formats (`7zr i`, `-t`)
 
-- [ ] 7z: not done
+- [x] 7z: done: `TestOracle7z` (parity key `format/7z`)
 - [ ] xz (`-txz`, with `-mf` filters, `-mmt` block splitting, check type): not done
 - [ ] lzma (`-tlzma`): not done
 - [ ] lzma86 (`-tlzma86`): not done
@@ -317,8 +362,8 @@ Top to bottom. No reordering by what seems important. Each line: port the
 public-domain source faithfully, add its line to the parity test, run the
 oracle test, mark the line. Commit per line. The encoder is done and marks
 LZMA and LZMA2; Copy is marked from the raw packed stream; the 7z
-container is next (it marks the 7z format line), then move down. Never spend a
-session on anything that marks no line.
+container is done and marks the 7z format line; BCJ is next, then move
+down. Never spend a session on anything that marks no line.
 
 ## Reporting
 
