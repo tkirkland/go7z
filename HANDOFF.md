@@ -33,8 +33,10 @@ screwdriver. Do not grab the handle back.
 - Repo: fresh git repo on branch `main`, no remote. The old remote
   `tkirkland/go7z` still exists on GitHub; it is not a reference and is not
   to be used. Start from zero means this repo, not that one.
-- Go 1.27.3 is installed at `C:\Users\Tony\sdk\go`, not on PATH. In git-bash
-  prefix commands with `export PATH="/c/Users/Tony/sdk/go/bin:$PATH"`.
+- Go 1.27.3 is installed at `C:\Users\Tony\sdk\go`. It was added to the
+  user PATH on 2026-11-06 but the tool shell did not see it; in git-bash
+  prefix commands with `export PATH="/c/Users/Tony/sdk/go/bin:$PATH"` if
+  `go version` fails.
 - Oracle: `tools/oracle/7zr.exe`, SHA-256
   `9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`, fetched
   from release tag `26.05` of github.com/ip7z/7zip (asset `7zr.exe`).
@@ -48,7 +50,9 @@ screwdriver. Do not grab the handle back.
   `x64/7za.exe` for the 64-bit build-identity line.
 - Parity fixtures committed: `testdata/parity/7zr-i.txt` (1072 bytes),
   `testdata/parity/7zr-usage.txt` (2902 bytes), generated from the verified
-  oracle.
+  oracle. `testdata/ORACLE.md` records the oracle provenance.
+  `reference/`, `tools/oracle/` and `tools/tmp/` are gitignored; a fresh
+  clone needs `tools/fetch-oracle.ps1` and a clone of the pinned source.
 - TestParity: package `parity`, `//go:build oracle`. It walks 84 lines
   (6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches), verifies
   the oracle hash and that the fixtures equal live oracle output, and prints
@@ -57,7 +61,7 @@ screwdriver. Do not grab the handle back.
   `parity/codec_lzma_test.go`). Current baseline: **2 of 84**.
 - Commits: `e24c1f4` (harness, fixtures, oracle verifier),
   `cf112fa` (LZMA/LZMA2 decoders), `0d99726` (LZMA encoder, codec/LZMA),
-  `5409d15` (LZMA2 encoder, codec/LZMA2).
+  `5409d15` (LZMA2 encoder, codec/LZMA2), then this handoff's updates.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -107,11 +111,12 @@ screwdriver. Do not grab the handle back.
   5. `ReduceSize` = input size and `SetDataSize` = input size reproduce
      the oracle for 7z and xz; for multi-block LZMA2 the per-block expected
      size is the block length (MtCoder uses direct input per block).
-- Critical path from here, top of the checklist: Copy, then the 7z
-  container (`DOC/7zFormat.txt` + observation) so that `a` can write an
-  archive and Copy/LZMA/LZMA2 are reachable from the CLI; then BCJ and
-  the other filters (`Bra86.c`, `Bra.c`, `BraIA64.c`, `Bcj2Enc.c`, `Delta.c`),
-  each registered as a parity line the same way the codec lines are.
+- Critical path from here: the 7z container (`DOC/7zFormat.txt` +
+  observation), which is what makes Copy observable; then mark Copy (the
+  top not-done codec line); then BCJ and the other filters (`Bra86.c`,
+  `Bra.c`, `BraIA64.c`, `Bcj2Enc.c`, `Delta.c`), each registered as a parity
+  line the same way the codec lines are. No container observations have
+  been recorded yet; the next session makes them from the oracle.
 
 ## How you fail, and the rule that stops each one
 
@@ -177,7 +182,7 @@ Parity is defined by the oracle binary, not by anyone's description of it:
 is a pass or a fail. A line the module rejects is a fail. A line where the
 module's bytes differ from the oracle's is a fail. The test prints
 `N of M` at the end. Parity is `M of M`. Report that number and nothing
-softer. The baseline recorded in this repo is 0 of 84.
+softer. The baseline recorded in this repo is 2 of 84.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
 and IV; `b` benchmark prints timings), the line passes when: the module
@@ -203,7 +208,7 @@ so every codec on the parity list has a public-domain source file:
 | PPC, IA64, ARM, ARMT, SPARC, ARM64, RISCV | `C/Bra.c`, `C/BraIA64.c`                                                                                                                                           |
 | Delta                                     | `C/Delta.c`                                                                                                                                                        |
 | Swap2, Swap4                              | trivial byte swap (no SDK file; semantics from `7zr` output)                                                                                                       |
-| 7zAES, AES256CBC                          | `C/Aes.c`, `C/Sha256.c`; key derivation observed from the oracle (SHA-256 over salt+password(UTF-16LE)+counter, 2^19 rounds, salt 0 bytes, IV 16 bytes by default) |
+| 7zAES, AES256CBC                          | `C/Aes.c`, `C/Sha256.c`; key derivation as observed in the discarded repo's session (SHA-256 over salt+password(UTF-16LE)+counter, 2^19 rounds, salt 0 bytes, IV 16 bytes by default): re-verify against this oracle before relying on it |
 | xz format                                 | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`, `C/XzIn.c`, `C/XzCrc64.c`                                                                                                      |
 | lzma, lzma86 formats                      | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the 13-byte .lzma header                                                                                                      |
 | CRC32, CRC64, SHA-256 hashers             | `C/7zCrc.c`, `C/XzCrc64.c`, `C/Sha256.c` (Go stdlib gives identical values; identity is on output format)                                                          |
@@ -220,8 +225,8 @@ Nothing else.
 ### Codecs (`7zr i`)
 
 - [ ] Copy: not done
-- [x] LZMA: done. `TestEncodeOracleLZMA`, parity `codec/LZMA` (commit `0d99726`)
-- [x] LZMA2: done. `TestEncodeOracleLZMA2`, parity `codec/LZMA2` (commit `5409d15`)
+- [x] LZMA: done: `TestEncodeOracleLZMA` (parity key `codec/LZMA`)
+- [x] LZMA2: done: `TestEncodeOracleLZMA2` (parity key `codec/LZMA2`)
 - [ ] BCJ: not done
 - [ ] BCJ2: not done
 - [ ] PPC: not done
@@ -256,7 +261,7 @@ Nothing else.
 
 ### Commands
 
-- [ ] a, x, e, l, t (`cmd/go7z`): not done
+- [ ] a, x, e, l, t (`cmd/go7z`, to be created; no CLI exists yet): not done
 - [ ] d (delete from archive): not done
 - [ ] u (update, with the `-u` sub-switches): not done
 - [ ] rn (rename): not done
@@ -266,7 +271,8 @@ Nothing else.
 
 ### Switches (`7zr` usage)
 
-- [ ] -m (every 7z-format parameter: see `sevenzip.Options.ParseSwitch`): not done
+- [ ] -m (every parameter the oracle accepts after `-m`, observed from it;
+      the LZMA/LZMA2 subset is mapped in `internal/oracletest.ParseMethod`): not done
 - [ ] -o, -y, -slt: not done
 - [ ] -p, -mhe: not done
 - [ ] -v: not done
