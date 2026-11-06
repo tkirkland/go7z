@@ -28,7 +28,7 @@ When you form an opinion about the order of work, that is the tool deciding,
 and that is the failure. The checklist below is the user's hand on the
 screwdriver. Do not grab the handle back.
 
-## Session state (2026-11-06, after the encoder session)
+## Session state (2026-11-06, after the BCJ session)
 
 - Repo: fresh git repo on branch `main`, no remote. The old remote
   `tkirkland/go7z` still exists on GitHub; it is not a reference and is not
@@ -58,12 +58,14 @@ screwdriver. Do not grab the handle back.
   the oracle hash and that the fixtures equal live oracle output, and prints
   `parity: N of M`. A line is registered by adding its key to the `checks`
   map in an `init()` of a `parity/*_test.go` file (see
-  `parity/codec_lzma_test.go`). Current baseline: **4 of 84**.
+  `parity/codec_lzma_test.go`). Current baseline: **5 of 84**.
 - Commits: `e5c143d` (harness, fixtures, oracle verifier),
   `7eeb1b3` (LZMA/LZMA2 decoders), `49f8072` (LZMA encoder, codec/LZMA),
   `998f516` (LZMA2 encoder, codec/LZMA2), the handoff updates,
-  `106f608` (Copy coder, `copycoder/`, codec/Copy), then the 7z container
-  (`sevenzip/`, format/7z).
+  `106f608` (Copy coder, `copycoder/`, codec/Copy), `6218c03` (7z
+  container, `sevenzip/`, format/7z), `3f3a43c` (module path
+  `github.com/tkirkland/go7z`), then README, LICENSE, the perf test, and
+  the BCJ filter (`bra/`, codec/BCJ, container bonds).
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -118,12 +120,14 @@ screwdriver. Do not grab the handle back.
   (`-m0=Copy` at mx0/1/5/9, bare `-mx0`, sizes 1/100/4096/300000).
 - `sevenzip/` package (format/7z): `reader.go` is a port of `7zArcIn.c`
   and `7zDec.c` (`Open`, `Archive.Entries`, `Archive.Extract`; folders with
-  one Copy/LZMA/LZMA2 coder; filters and BCJ2 return `ErrUnsupported` until
-  their lines are done). `writer.go` (`NewWriter`, `AddPath`, `AddPathIn`,
-  `Write`, `Create`, `Options`) is built from `DOC/7zFormat.txt` plus
-  observation; there is no public-domain writer source. `number.go` has the
+  one Copy/LZMA/LZMA2 coder, optionally behind a ported filter; other
+  filters and BCJ2 return `ErrUnsupported` until their lines are done).
+  `writer.go` (`NewWriter`, `AddPath`, `AddPathIn`, `Write`, `Create`,
+  `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
+  no public-domain writer source. Both sides handle two-coder folders
+  (method + filter, one bond) since the BCJ line. `number.go` has the
   variable-length number and bit vectors. Proof: `TestOracle7z` / parity
-  `format/7z`, 58 cases byte-identical to the oracle's archives (Copy,
+  `format/7z`, 89 cases byte-identical to the oracle's archives (Copy,
   LZMA, LZMA2 at levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and
   directories, nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`,
   `-mtc=on`, `-mtm=off`, `-mmt1`, name ordering), and the module reads every
@@ -159,12 +163,43 @@ screwdriver. Do not grab the handle back.
      solid, and to the largest data file when `-ms=off`, never to the
      folder's own size. `SetDataSize` is the folder size.
   8. Attributes are the raw Win32 attributes; times are raw FILETIMEs.
-- Critical path from here: BCJ and the other filters (`Bra86.c`,
-  `Bra.c`, `BraIA64.c`, `Bcj2Enc.c`, `Delta.c`), each registered as a parity
-  line the same way the codec lines are. The 7z container exposes them
-  through `-m0=<Filter>` once the reader and writer support multi-coder
-  folders (bonds); `readFolder` already parses bonds, `decodeFolder` and the
-  writer do not yet build them.
+- `bra/` package (codec/BCJ): `bra86.go` is the port of `Bra86.c`
+  (`X86Convert` with the carried state, `X86Encode`/`X86Decode` whole
+  buffer, `NewX86EncodeReader`/`NewX86DecodeReader` streaming with the
+  unprocessed tail carried over as 7-Zip's filter coder does). Proof:
+  `TestEncodeOracleBCJ` / parity `codec/BCJ`, 37 cases byte-identical to
+  the raw packed stream of `-m0=BCJ` (the oracle binary itself as a real
+  PE, slices of it, deterministic binary and text 0..3 MB, branch-opcode
+  patterns, all-E8/E9/00/FF, levels 1/9), whole-buffer and streaming
+  with uneven chunks, and the oracle's streams decode back. The 7z
+  container exposes it as `Options.Filter = BCJ` with `Method` LZMA2,
+  LZMA, Copy or `None` (filter alone); `TestOracle7z` has 31 BCJ cases
+  (89 in all), byte-identical and read back.
+- Filter facts observed on the oracle (do not re-derive):
+  1. `-m0=BCJ` alone: the folder's only coder is BCJ (`04 03 03 01 03`,
+     no properties), packed size = unpacked size; the level does not add
+     a compressor. `7zDec.c` rejects such a folder (first coder must be
+     a main method); the module reads it anyway because the oracle does.
+  2. `-m0=BCJ -m1=<M>` and `-mf=BCJ` (same bytes with the default or
+     `-m0=<M>` method): two coders, the method first, BCJ second, one
+     bond `01 00` (in-stream 1 from coder 0), the single pack stream
+     implicit, then one unpack size per coder, both equal.
+  3. `-mf=BCJ -mx0` is BCJ + Copy; `-m0=BCJ -m1=LZMA2 -mx0` is LZMA2 at
+     level 0 (dict 64 KB) behind BCJ (not expressible in `Options` yet;
+     the `-m` switch line).
+  4. BCJ alone and BCJ + Copy are solid (unlike bare Copy), one block
+     for 600 MB of 4 MB files; no limit observed. BCJ + LZMA/LZMA2 keep
+     the coder's solid limit and dictionary reduction rules.
+  5. The filter output for a stream is the same whether the converter
+     runs over the whole buffer or over chunks with the tail carried
+     (proven by the 600 KB PE case, where the oracle chunks internally).
+- Critical path from here: the remaining filters (`Bra.c` for PPC, ARM,
+  ARMT, SPARC, ARM64, RISCV; `BraIA64.c`; `Bcj2Enc.c`/`Bcj2.c`; `Delta.c`;
+  Swap2/Swap4), each registered as a parity line like `codec/BCJ`: add
+  the converter to `bra/`, a `Filter` value in `sevenzip`, the method id
+  in `decodeFolder` and the writer, and cases to `SevenZCases`. The
+  two-coder folder plumbing (bonds) is done; BCJ2 needs the four-coder
+  layout of `CheckSupportedFolder`.
 
 ## How you fail, and the rule that stops each one
 
@@ -256,7 +291,7 @@ so every codec on the parity list has a public-domain source file:
 | Copy                          | `copycoder/`: identity (no SDK file; C++   |
 |                               | CopyCoder.cpp is LGPL); verified against   |
 |                               | the raw `-m0=Copy` stream of a .7z         |
-| BCJ (x86)                     | `C/Bra86.c`                                |
+| BCJ (x86)                     | `bra/`: ported (`C/Bra86.c`)               |
 | BCJ2                          | `C/Bcj2Enc.c`, `C/Bcj2.c`                  |
 | PPC, IA64, ARM, ARMT,         | `C/Bra.c`, `C/BraIA64.c`                   |
 | SPARC, ARM64, RISCV           |                                            |
@@ -292,7 +327,7 @@ Nothing else.
 - [x] Copy: done: `TestEncodeOracleCopy` (parity key `codec/Copy`)
 - [x] LZMA: done: `TestEncodeOracleLZMA` (parity key `codec/LZMA`)
 - [x] LZMA2: done: `TestEncodeOracleLZMA2` (parity key `codec/LZMA2`)
-- [ ] BCJ: not done
+- [x] BCJ: done: `TestEncodeOracleBCJ` (parity key `codec/BCJ`)
 - [ ] BCJ2: not done
 - [ ] PPC: not done
 - [ ] IA64: not done

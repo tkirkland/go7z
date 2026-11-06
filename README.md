@@ -1,7 +1,7 @@
 # go7z
 
-A pure Go implementation of 7-Zip's LZMA, LZMA2 and 7z container, written
-to be byte-identical to 7-Zip itself.
+A pure Go implementation of 7-Zip's LZMA, LZMA2, BCJ filter and 7z
+container, written to be byte-identical to 7-Zip itself.
 
 The reference is a pinned copy of 7-Zip 26.05 (`7zr.exe`, SHA-256
 verified). Every feature is proven by comparing the module's output with
@@ -11,17 +11,18 @@ definition of correct.
 ## Status
 
 Parity is tracked as a scoreboard over the 84 codecs, formats, hashers,
-commands and switches that `7zr` lists. Current state: **4 of 84**.
+commands and switches that `7zr` lists. Current state: **5 of 84**.
 
 | Line          | Proof                                                   |
 | ------------- | ------------------------------------------------------- |
 | codec/Copy    | `copycoder`: 13 cases identical to the oracle           |
 | codec/LZMA    | `lzma`: encoder and decoder, 26 cases identical         |
 | codec/LZMA2   | `lzma`: encoder and decoder, 42 cases identical         |
-| format/7z     | `sevenzip`: 58 archives identical, all read back        |
+| codec/BCJ     | `bra`: x86 converter, 37 cases identical                |
+| format/7z     | `sevenzip`: 89 archives identical, all read back        |
 
-Everything else (branch filters, BCJ2, Delta, encryption, xz/lzma
-formats, the CLI commands and switches) is not done. See `HANDOFF.md`
+Everything else (the other branch filters, BCJ2, Delta, encryption,
+xz/lzma formats, the CLI commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
 ## Packages
@@ -30,6 +31,8 @@ for the full checklist and the order of work.
   public-domain LZMA SDK sources in 7-Zip 26.05 (`LzmaEnc.c`, `LzFind.c`,
   `Lzma2Enc.c`, `LzmaDec.c`, `Lzma2Dec.c`).
 - `copycoder`: the Copy (store) coder.
+- `bra`: the x86 branch converter (BCJ), ported from `Bra86.c`, as
+  whole-buffer functions and as streaming readers.
 - `sevenzip`: the 7z container. The reader is a port of `7zArcIn.c` and
   `7zDec.c`. The writer has no public-domain source; it is built from
   `DOC/7zFormat.txt` and from observing what `7zr` writes.
@@ -55,8 +58,8 @@ for i, e := range a.Entries {
 }
 ```
 
-`Options` covers the method (LZMA2, LZMA, Copy), level, solid mode and
-block size, header compression, threads and which timestamps to store.
+`Options` covers the method (LZMA2, LZMA, Copy, or the filter alone),
+the BCJ filter, level, solid mode and block size, header compression, threads and which timestamps to store.
 Raw codec streams are available through `lzma.EncodeBytes`,
 `lzma.Lzma2Encoder`, `lzma.DecodeOneShot` and `lzma.Lzma2DecodeOneShot`.
 
@@ -83,8 +86,8 @@ The pinned sources used for the ports are git tag `26.05` of
 
 ## Licensing of the ported code
 
-The C sources ported here (`C/Lzma*.c`, `C/LzFind.c`, `C/7zArcIn.c`,
-`C/7zDec.c`) are public domain, as marked in each file. The C++ archive
+The C sources ported here (`C/Lzma*.c`, `C/LzFind.c`, `C/Bra86.c`,
+`C/7zArcIn.c`, `C/7zDec.c`) are public domain, as marked in each file. The C++ archive
 layer of 7-Zip is LGPL and is not ported; the 7z writer reproduces its
 output from the format documentation and from observation.
 

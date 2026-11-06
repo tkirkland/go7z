@@ -5,6 +5,7 @@ import (
 	"io"
 	"unicode/utf16"
 
+	"github.com/tkirkland/go7z/bra"
 	"github.com/tkirkland/go7z/lzma"
 )
 
@@ -1027,16 +1028,38 @@ func readFileNames(data []byte, entries []Entry) error {
 }
 
 // decodeFolder is SzAr_DecodeFolder + SzFolder_Decode2 for the folders
-// this module can decode: one coder, Copy, LZMA or LZMA2. Filters and
-// BCJ2 are their own parity lines and return ErrUnsupported until ported.
+// this module can decode (CheckSupportedFolder): one coder, Copy, LZMA
+// or LZMA2, optionally with one filter coder bound to it (two coders,
+// bond in-stream 1 from coder 0, one pack stream). A filter not yet
+// ported and BCJ2 are their own parity lines and return ErrUnsupported.
 func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error) {
 	f := &p.folders[fo]
 	outSize := f.unpackSize()
-	if len(f.coders) != 1 {
+	var filter *coderInfo
+	switch len(f.coders) {
+	case 1:
+		if len(f.packStreams) != 1 || f.packStreams[0] != 0 || len(f.bonds) != 0 {
+			return nil, ErrUnsupported
+		}
+	case 2:
+		filter = &f.coders[1]
+		if filter.numStreams != 1 || len(f.packStreams) != 1 || f.packStreams[0] != 0 ||
+			len(f.bonds) != 1 || f.bonds[0].inIndex != 1 || f.bonds[0].outIndex != 0 {
+			return nil, ErrUnsupported
+		}
+		switch filter.methodID {
+		case MethodBCJ:
+			if len(filter.props) != 0 {
+				return nil, ErrUnsupported
+			}
+		default:
+			return nil, ErrUnsupported
+		}
+	default:
 		return nil, ErrUnsupported
 	}
 	c := &f.coders[0]
-	if c.numStreams != 1 || len(f.packStreams) != 1 || f.packStreams[0] != 0 || len(f.bonds) != 0 {
+	if c.numStreams != 1 {
 		return nil, ErrUnsupported
 	}
 	packIndex := f.startPackStream
@@ -1053,6 +1076,15 @@ func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error
 			return nil, ErrData
 		}
 		copy(out, in)
+	case MethodBCJ:
+		// The filter as the folder's only coder (-m0=BCJ with no -m1).
+		// 7zDec.c rejects this (the first coder must be a main method);
+		// the oracle writes and reads it, so the module reads it too.
+		if filter != nil || len(c.props) != 0 || inSize != outSize {
+			return nil, ErrUnsupported
+		}
+		copy(out, in)
+		filter = c
 	case MethodLZMA:
 		written, consumed, status, err := lzma.DecodeOneShot(out, in, c.props, lzma.FinishEnd)
 		if err != nil {
@@ -1078,6 +1110,16 @@ func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error
 		}
 	default:
 		return nil, ErrUnsupported
+	}
+	if filter != nil {
+		// 7zDec.c: the branch converter runs over the whole unpacked
+		// folder with pc 0.
+		switch filter.methodID {
+		case MethodBCJ:
+			bra.X86Decode(out)
+		default:
+			return nil, ErrUnsupported
+		}
 	}
 	if f.crcDefined && crc(out) != f.crc {
 		return nil, ErrCRC

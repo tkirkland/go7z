@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"github.com/tkirkland/go7z/bra"
 	"github.com/tkirkland/go7z/lzma"
 )
 
@@ -30,6 +31,21 @@ const (
 	LZMA2 Method = iota // default
 	LZMA
 	Copy
+	// None stores the filter output with no coder behind it: -m0=BCJ
+	// with no -m1 (observed: the folder's only coder is the filter).
+	// It requires a Filter.
+	None
+)
+
+// Filter selects the branch converter placed in front of the coder
+// (-m0=<Filter> -m1=<Method>, or -mf=<Filter>; observed: the folder has
+// two coders, the method first and the filter second, bound filter
+// output to method input, and one unpack size per coder).
+type Filter int
+
+const (
+	NoFilter Filter = iota
+	BCJ             // x86 (bra.X86Convert)
 )
 
 // LevelStore is the Level value for -mx0.
@@ -39,7 +55,8 @@ const LevelStore = -1
 // default: LZMA2 at level 5, solid, compressed header, MTime stored.
 type Options struct {
 	Method Method
-	Level  int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
+	Filter Filter // branch converter in front of Method; NoFilter = none
+	Level  int    // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
 
 	// LZMAProps / LZMA2Props override the level defaults for the data
 	// coder. Level and ReduceSize are set by the writer.
@@ -259,8 +276,10 @@ type folderPlan struct {
 	items      []int // indices into sorted items
 	unpackSize uint64
 	packSize   uint64
-	coderID    uint32
+	coderID    uint32 // main coder; MethodCopy when the filter stands alone (not written then)
 	coderProps []byte
+	filterID   uint32 // 0 = no filter; otherwise the second coder, bound to the first
+	noCoder    bool   // Method None: the filter is the only coder
 }
 
 // Write writes the archive. out must support seeking back to the start
@@ -277,13 +296,27 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 
 	method := w.opts.Method
 	if w.opts.Level == LevelStore && method == LZMA2 {
-		// -mx0 with the default method selects Copy (observed).
+		// -mx0 with the default method selects Copy (observed, also
+		// behind a filter: -mf=BCJ -mx0 gives BCJ + Copy).
 		method = Copy
 	}
+	var filterID uint32
+	switch w.opts.Filter {
+	case NoFilter:
+		if method == None {
+			return errors.New("sevenzip: Method None needs a Filter")
+		}
+	case BCJ:
+		filterID = MethodBCJ
+	default:
+		return fmt.Errorf("sevenzip: unknown filter %d", w.opts.Filter)
+	}
 
-	// Plan folders.
+	// Plan folders. The solid limit follows the coder's dictionary
+	// (solidSize); a filter alone or in front of Copy is solid with no
+	// split observed up to 600 MB.
 	var plans []folderPlan
-	limit := uint64(0)
+	limit := ^uint64(0)
 	switch method {
 	case LZMA:
 		_, dict := w.lzmaProps()
@@ -295,7 +328,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	if w.opts.SolidSize != 0 {
 		limit = w.opts.SolidSize
 	}
-	solid := !w.opts.SolidOff && method != Copy
+	solid := !w.opts.SolidOff && (method != Copy || filterID != 0)
 	for i := range items {
 		if items[i].group() != 2 {
 			continue
@@ -308,7 +341,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 				continue
 			}
 		}
-		plans = append(plans, folderPlan{items: []int{i}, unpackSize: items[i].size})
+		plans = append(plans, folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, noCoder: method == None})
 	}
 
 	// Start header placeholder.
@@ -339,11 +372,17 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		p := &plans[pi]
 		cw := &countWriter{w: out}
 		fr := &folderReader{items: items, idx: p.items}
+		var src io.Reader = fr
+		if p.filterID == MethodBCJ {
+			src = bra.NewX86EncodeReader(fr)
+		}
 		var err error
 		switch method {
+		case None:
+			_, err = io.Copy(cw, src)
 		case Copy:
 			p.coderID = MethodCopy
-			_, err = io.Copy(cw, fr)
+			_, err = io.Copy(cw, src)
 		case LZMA:
 			props, _ := w.lzmaProps()
 			props.ReduceSize = dataTotal
@@ -354,7 +393,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			enc.SetDataSize(p.unpackSize)
 			pr := enc.WriteProperties()
 			p.coderID, p.coderProps = MethodLZMA, pr[:]
-			err = enc.Encode(cw, fr)
+			err = enc.Encode(cw, src)
 		case LZMA2:
 			props, _ := w.lzma2Props()
 			props.LzmaProps.ReduceSize = dataTotal
@@ -364,7 +403,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			}
 			enc.SetDataSize(p.unpackSize)
 			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
-			err = enc.Encode(cw, fr)
+			err = enc.Encode(cw, src)
 		}
 		if err != nil {
 			return err
@@ -477,6 +516,40 @@ func encodeHeader(header []byte) ([]byte, [5]byte, error) {
 // appendCoder writes one folder with one coder (NumCoders = 1).
 func appendCoder(b []byte, id uint32, props []byte) []byte {
 	b = writeNumber(b, 1)
+	return appendCoderRecord(b, id, props)
+}
+
+// appendFolder writes the folder record of a plan: the main coder, then
+// the filter coder bound to it (observed: coder order method, filter;
+// bond InIndex 1 OutIndex 0; the single pack stream is implicit), or
+// the filter alone for Method None.
+func appendFolder(b []byte, p *folderPlan) []byte {
+	switch {
+	case p.filterID == 0:
+		return appendCoder(b, p.coderID, p.coderProps)
+	case p.noCoder:
+		return appendCoder(b, p.filterID, nil)
+	}
+	b = writeNumber(b, 2)
+	b = appendCoderRecord(b, p.coderID, p.coderProps)
+	b = appendCoderRecord(b, p.filterID, nil)
+	b = writeNumber(b, 1) // bond: in-stream 1 (the filter's input)
+	b = writeNumber(b, 0) // ... from coder 0's output
+	return b
+}
+
+// numCoders is how many coders the plan's folder has (one unpack size
+// is written per coder).
+func (p *folderPlan) numCoders() int {
+	if p.filterID != 0 && !p.noCoder {
+		return 2
+	}
+	return 1
+}
+
+// appendCoderRecord writes one coder record (id, number of streams,
+// properties).
+func appendCoderRecord(b []byte, id uint32, props []byte) []byte {
 	var idBytes []byte
 	switch {
 	case id == 0:
@@ -550,11 +623,15 @@ func buildHeader(items []item, plans []folderPlan, storeCTime, storeATime, store
 		h.b = writeNumber(h.b, uint64(len(plans)))
 		h.b = append(h.b, 0)
 		for i := range plans {
-			h.b = appendCoder(h.b, plans[i].coderID, plans[i].coderProps)
+			h.b = appendFolder(h.b, &plans[i])
 		}
 		h.b = append(h.b, idCodersUnpackSize)
 		for i := range plans {
-			h.b = writeNumber(h.b, plans[i].unpackSize)
+			// One size per coder; a filter keeps the size (observed:
+			// both sizes equal the folder's unpack size).
+			for c := 0; c < plans[i].numCoders(); c++ {
+				h.b = writeNumber(h.b, plans[i].unpackSize)
+			}
 		}
 		h.b = append(h.b, idEnd)
 		// SubStreamsInfo (observed: CRCs always here, never as folder CRCs)

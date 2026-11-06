@@ -11,8 +11,9 @@ import (
 // files at every method and level, empty files and directories,
 // multi-file solid and non-solid archives, header compression on and
 // off, nested directories, name ordering, CTime, and sizes that make the
-// LZMA2 encoder split blocks.
-func SevenZCases() []SevenZCase {
+// LZMA2 encoder split blocks, and the BCJ filter alone and in front of
+// each method (exe is a real x86 image for the filter cases).
+func SevenZCases(exe []byte) []SevenZCase {
 	small := []TreeFile{{"in/a.txt", TextLike(85)}}
 	mixed := []TreeFile{
 		{"in/a.txt", TextLike(85)},
@@ -112,12 +113,59 @@ func SevenZCases() []SevenZCase {
 	big := []TreeFile{{"in/big.bin", DeterministicData(3 << 20)}}
 	add("big_mx1", big, []string{"in/big.bin"}, []string{"-mx=1"}, sevenzip.Options{Level: 1})
 	add("big_mx1_mt1", big, []string{"in/big.bin"}, []string{"-mx=1", "-mmt1"}, sevenzip.Options{Level: 1, Threads: 1})
+	// BCJ filter: alone (-m0=BCJ), in front of each method (-m0=BCJ
+	// -m1=<M>), and forced with -mf=BCJ; a real PE image, a tree of PE
+	// slices with empty items, solid and non-solid, and header
+	// compression off so the folder records are visible in the diff.
+	pe := []TreeFile{{"in/exe.bin", exe}}
+	peTree := []TreeFile{
+		{"pe/a.bin", exe[:100000]},
+		{"pe/b.bin", exe[100000:300000]},
+		{"pe/c.bin", exe[300000:302000]},
+		{"pe/empty.bin", nil},
+		{"pe/dir/", nil},
+	}
+	bcj := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Filter = sevenzip.BCJ
+		add(name, files, inputs, args, opts)
+	}
+	bcj("bcj_only", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ"}, sevenzip.Options{Method: sevenzip.None})
+	bcj("bcj_only_hc_off", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	bcj("bcj_only_mx1", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-mx=1"}, sevenzip.Options{Method: sevenzip.None, Level: 1})
+	bcj("bcj_lzma2", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA2"}, sevenzip.Options{})
+	bcj("bcj_lzma2_hc_off", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	bcj("bcj_lzma2_mx1", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA2", "-mx=1"}, sevenzip.Options{Level: 1})
+	bcj("bcj_lzma2_mx9", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA2", "-mx=9"}, sevenzip.Options{Level: 9})
+	bcj("bcj_lzma", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	bcj("bcj_lzma_hc_off", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=LZMA", "-mhc=off"}, sevenzip.Options{Method: sevenzip.LZMA, NoHeaderCompression: true})
+	bcj("bcj_copy", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	bcj("bcj_copy_hc_off", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ", "-m1=Copy", "-mhc=off"}, sevenzip.Options{Method: sevenzip.Copy, NoHeaderCompression: true})
+	bcj("mf_bcj", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ"}, sevenzip.Options{})
+	bcj("mf_bcj_lzma", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ", "-m0=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	bcj("mf_bcj_mx0", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	bcj("mf_bcj_mt1", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ", "-mmt1"}, sevenzip.Options{Threads: 1})
+	bcj("bcj_tree_only", peTree, []string{"pe"}, []string{"-m0=BCJ"}, sevenzip.Options{Method: sevenzip.None})
+	bcj("bcj_tree_only_hc_off", peTree, []string{"pe"}, []string{"-m0=BCJ", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	bcj("bcj_tree_only_ms_off", peTree, []string{"pe"}, []string{"-m0=BCJ", "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+	bcj("bcj_tree_only_ms_150k", peTree, []string{"pe"}, []string{"-m0=BCJ", "-ms=150k"}, sevenzip.Options{Method: sevenzip.None, SolidSize: 150 << 10})
+	bcj("bcj_tree_lzma2", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=LZMA2"}, sevenzip.Options{})
+	bcj("bcj_tree_lzma2_hc_off", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	bcj("bcj_tree_lzma2_ms_off", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=LZMA2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	bcj("bcj_tree_lzma2_ms_150k", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=LZMA2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	bcj("bcj_tree_lzma", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	bcj("bcj_tree_copy", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	bcj("bcj_tree_copy_ms_off", peTree, []string{"pe"}, []string{"-m0=BCJ", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+	bcj("bcj_tree_mf_mx0", peTree, []string{"pe"}, []string{"-mf=BCJ", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	bcj("bcj_tree_many_mx1", tenMB, []string{"mb"}, []string{"-mf=BCJ", "-mx=1"}, sevenzip.Options{Level: 1})
+	bcj("bcj_tree_many_ms_4m", tenMB, []string{"mb"}, []string{"-mf=BCJ", "-ms=4m"}, sevenzip.Options{SolidSize: 4 << 20})
+	bcj("bcj_small", small, []string{"in/a.txt"}, []string{"-mf=BCJ"}, sevenzip.Options{})
+	bcj("bcj_mixed", mixed, mixedInputs, []string{"-mf=BCJ"}, sevenzip.Options{})
 	return cases
 }
 
 // RunSevenZMatrix runs every container case as a parallel subtest.
 func RunSevenZMatrix(t *testing.T, root string) {
-	for _, c := range SevenZCases() {
+	for _, c := range SevenZCases(OracleExe(t, root)) {
 		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
