@@ -1,0 +1,12 @@
+# Pinned references (cloned/fetched, not part of the module)
+/reference/
+/tools/oracle/
+/tools/tmp/
+
+# Session memory
+/.remember/
+
+# Build outputs
+/go7z
+/go7z.exe
+*.test
