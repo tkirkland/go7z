@@ -5,7 +5,7 @@ package lzma_test
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // TestEncodeOracleLZMA requires the module's LZMA streams to be

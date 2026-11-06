@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/oracle"
 )
 
 // Env is what one line check gets: the repo root and the verified oracle.

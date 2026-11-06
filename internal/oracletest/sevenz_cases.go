@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go7z/sevenzip"
+	"github.com/tkirkland/go7z/sevenzip"
 )
 
 // SevenZCases is the container matrix compared with the oracle: single

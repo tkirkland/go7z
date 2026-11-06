@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go7z/copycoder"
+	"github.com/tkirkland/go7z/copycoder"
 )
 
 // CheckCopy encodes input with the module's Copy coder and compares with

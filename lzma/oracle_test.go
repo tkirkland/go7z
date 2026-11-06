@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"testing"
 
-	"go7z/internal/oracletest"
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // TestDecodeOracleXz decodes .xz files written by the pinned 7zr (single

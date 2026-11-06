@@ -3,7 +3,7 @@ package sevenzip
 import (
 	"bytes"
 
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // EncodeHeaderWith compresses a raw header with explicit LZMA

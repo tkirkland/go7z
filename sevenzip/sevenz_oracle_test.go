@@ -5,7 +5,7 @@ package sevenzip_test
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // TestOracle7z requires the module's .7z archives to be byte-identical

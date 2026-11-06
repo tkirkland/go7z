@@ -5,7 +5,7 @@ import (
 	"io"
 	"unicode/utf16"
 
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // Port of C/7zArcIn.c and C/7zDec.c (26.05, public domain): the 7z

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/oracle"
 )
 
 // RepoRoot finds the directory holding go.mod above the test's cwd.

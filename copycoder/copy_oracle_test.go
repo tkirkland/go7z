@@ -5,7 +5,7 @@ package copycoder_test
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // TestEncodeOracleCopy requires the module's Copy streams to be

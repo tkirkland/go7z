@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // LZMA2MethodCases are the 7z -m0=LZMA2 method strings covered against

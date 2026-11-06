@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // The 7z writer. There is no public-domain SDK source for writing 7z

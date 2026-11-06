@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go7z/internal/oracle"
-	"go7z/internal/oracletest"
-	"go7z/lzma"
-	"go7z/sevenzip"
+	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/lzma"
+	"github.com/tkirkland/go7z/sevenzip"
 )
 
 // oracleHeaders writes a multi-item archive with the oracle twice, with

@@ -5,7 +5,7 @@ package parity
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // codec/Copy: the module's Copy coder (copycoder/) writes byte-identical

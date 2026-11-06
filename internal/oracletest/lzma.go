@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go7z/lzma"
+	"github.com/tkirkland/go7z/lzma"
 )
 
 // ParseMethod maps a 7-Zip method string (as given to -m0=) onto the SDK

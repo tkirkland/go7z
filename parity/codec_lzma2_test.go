@@ -5,7 +5,7 @@ package parity
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // codec/LZMA2: the module's LZMA2 encoder (lzma/lzma2enc.go, ported from

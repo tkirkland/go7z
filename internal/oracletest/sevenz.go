@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"go7z/internal/oracle"
-	"go7z/sevenzip"
+	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/sevenzip"
 )
 
 // TreeFile describes one input item for a 7z container check.

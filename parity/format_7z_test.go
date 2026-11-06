@@ -5,7 +5,7 @@ package parity
 import (
 	"testing"
 
-	"go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/oracletest"
 )
 
 // format/7z: the module writes .7z archives byte-identical to the
