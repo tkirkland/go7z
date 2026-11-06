@@ -4,7 +4,7 @@
 // unpacked stream, in both directions. 7-Zip selects it for -mx0 and for
 // -m0=Copy; the level and every other method parameter are ignored. There
 // is no SDK C source for it (the C++ CopyCoder.cpp is the LGPL layer and is
-// not ported); the behaviour is the identity and is verified against the
+// not ported); the behavior is the identity and is verified against the
 // raw stream the pinned oracle writes into .7z.
 package copycoder
 
