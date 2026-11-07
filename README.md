@@ -12,14 +12,16 @@ definition of correct.
 ## Status
 
 Parity is tracked as a scoreboard over the 84 codecs, formats, hashers,
-commands and switches that `7zr` lists, proven in two lanes: against the
-32-bit build (`7zr.exe`) and against the 64-bit build (`x64/7za.exe`
-from `7z2605-extra.7z`). The two builds differ where the source branches
+commands and switches that `7za` lists, proven in two lanes: against the
+32-bit build and against the 64-bit build of `7za.exe` from
+`7z2605-extra.7z`. The lines done so far were proven against `7zr.exe`,
+which writes the same bytes as the 32-bit `7za` on every case checked. The two builds differ where the source branches
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
-SPARC, RISCV) are omitted by decision, leaving 80 lines. Current state:
-**32-bit lane 5 of 80; 64-bit lane 0 of 80** (its harness is not built
-yet).
+SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
+**32-bit lane 5 of 92; 64-bit lane 0 of 92** (its harness is not built
+yet). Five lines (Deflate, Deflate64, BZip2, gzip, bzip2) have no
+public-domain source and are counted as blocked.
 
 | Line (32-bit) | Proof                                                   |
 | ------------- | ------------------------------------------------------- |

@@ -44,28 +44,41 @@ onset". Every parity line is therefore proven twice, once against each
 build, and a line is `done` only when both lanes pass. The 64-bit lane is
 the one real users run; the 32-bit lane exists because the source has it.
 
-Lane 32: `tools/sot/7zr.exe`, release tag `26.05` of
-github.com/ip7z/7zip, asset `7zr.exe`, SHA-256
-`9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`,
-version line `7-Zip (r) 26.05 (x86) : Igor Pavlov : Public domain :
-2026-10-21`.
-
-Lane 64: `x64/7za.exe` from the same release's asset `7z2605-extra.7z`
-(asset SHA-256
+Both lanes use `7za.exe` ("7-Zip alone", the standalone console build)
+from the release's asset `7z2605-extra.7z` (asset SHA-256
 `f27a8f103c84785026edcba1f67faf1357225df9d19ddb0b7760d55947141bc7`; a
-copy is at `tools/tmp/7z2605-extra.7z`), to be placed as
-`tools/sot/7za-x64.exe`, SHA-256
+copy is at `tools/tmp/7z2605-extra.7z`). The user chose `7za` on
+2026-11-06 ("i say 7za") and then ruled that every line it lists counts
+("all 12"), which is why the 32-bit lane moves from `7zr.exe` to the
+32-bit `7za.exe`: `7zr` does not list those 12 lines, and the two lanes
+must walk the same list.
+
+Lane 32: `7za.exe` from the package root, to be placed as
+`tools/sot/7za-x86.exe`, SHA-256
+`357929ec748d00728c64dd2e7aa0069258f40847c1410014bb60d22eb9ec75d5`,
+version line `7-Zip (a) 26.05 (x86) : ...` (record it when placed).
+
+Lane 64: `x64/7za.exe`, to be placed as `tools/sot/7za-x64.exe`, SHA-256
 `7ddf0a3bc451e166679296be630d6f0573eb386159c04184761c43020c484291`,
 version line `7-Zip (a) 26.05 (x64) : Copyright (c) 1999-2026 Igor Pavlov
 : 2026-10-21`.
 
-The same package also holds the 32-bit `7za.exe` (SHA-256
-`357929ec748d00728c64dd2e7aa0069258f40847c1410014bb60d22eb9ec75d5`) and
-`arm64/7za.exe` (SHA-256
-`86a2064dfe2a362f03e3c95e577cab88a9d2caaca9e442520046a050044d2d4d`).
-The 32-bit `7za.exe` writes the same bytes as `7zr.exe` (checked: the
-600 KB PE at mx1/5/9, identical archives), so the 32-bit lane keeps
-`7zr.exe`. The ARM64 build is not a lane; the user has not asked for it.
+Until the harness lines are done, the 32-bit proofs in this repo stand
+against `tools/sot/7zr.exe` (release asset `7zr.exe`, SHA-256
+`9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`,
+version line `7-Zip (r) 26.05 (x86) : Igor Pavlov : Public domain :
+2026-10-21`). The 32-bit `7za.exe` writes the same bytes as `7zr.exe` on
+the cases checked (the 600 KB PE at mx1/5/9, identical archives), so
+those proofs are expected to carry over; re-running them against
+`7za-x86.exe` is a harness line, not an assumption. The package also
+holds `arm64/7za.exe` (SHA-256
+`86a2064dfe2a362f03e3c95e577cab88a9d2caaca9e442520046a050044d2d4d`);
+ARM64 is not a lane, the user has not asked for it.
+
+The user's original goal, in their words on 2026-11-06: "the orij goal
+was 7z lzma2 with lfs". The checklist is wider than that by the user's
+later instruction (every switch, knob and tunable); the remark is
+context for what matters most, not a reordering.
 
 What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
 
@@ -92,14 +105,15 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
 4. xz: 300 MB of zeros at mx1 and mx5 (default and `-mmt1`) is identical
    in both builds; mx9 differs (the dictionary, item 2: 32-bit 45932
    bytes, 64-bit 46040).
-5. The 64-bit `7za` lists more than `7zr` does. `7za i` adds formats
+5. `7za` (both builds) lists more than `7zr` does. `7za i` adds formats
    Cab, bzip2, gzip, tar, zip, zstd; codecs BZip2, Deflate64, Deflate,
    PPMD; hashers SHA1, XXH64; and `-scrc` gains `SHA1|XXH64`. The
-   commands and the other 46 switches are identical. Those 12 extra
-   lines are listed at the end of the checklist and are not counted
-   until the user decides on them, because four of them (Deflate,
-   Deflate64, BZip2, and the gzip/bzip2 formats that need them) have
-   LGPL-only encoders and the licensing rule below says to stop and ask.
+   commands and the other 46 switches are identical. The user ruled on
+   2026-11-06 that all 12 count ("all 12, wtf"). They are in the
+   checklist below. Five of them (Deflate, Deflate64, BZip2 and the gzip
+   and bzip2 formats that need them) have LGPL-only compressors; their
+   mark is `blocked: LGPL-only source` until the user says what to do
+   about that, and that mark is reported as such, never as done.
 
 ## Session state (2026-11-06, after the BCJ session and the lane decision)
 
@@ -124,9 +138,13 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   fixtures equal its live output, and prints `parity: N of M`. A line is
   registered by adding its key to the `checks` map in an `init()` of a
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`). It has no
-  lane dimension yet. Four codecs are omitted by the user (PPC, IA64,
-  SPARC, RISCV), so the total is 80. Current baseline: **32-bit lane 5
-  of 80; 64-bit lane 0 of 80 (no harness)**.
+  lane dimension yet. With `7za` as the SoT the list is 96 lines (6+6
+  formats, 17+4 codecs, 3+2 hashers, 11 commands, 47 switches) minus the
+  four codecs the user omitted (PPC, IA64, SPARC, RISCV): 92 per lane.
+  The test still walks the 80-line `7zr` list until the harness lines
+  are done. Current baseline: **32-bit lane 5 of 92 (proven against
+  `7zr`, re-proof against `7za-x86` pending); 64-bit lane 0 of 92 (no
+  harness)**.
 - `internal/sot`: `Binary(root)` finds and hash-verifies `7zr.exe`;
   `Run`, `RunBinary`. Single SoT, no lane parameter.
 - Commits: `e5c143d` (harness, fixtures, SoT verifier),
@@ -336,23 +354,25 @@ text you are wrong, and the user pays for it.
 Parity is defined by the SoT binaries, not by anyone's description of
 them:
 
-- `7zr i` lists the codecs, formats and hashers (saved in
-  `testdata/parity/7zr-i.txt`).
-- `7zr` with no arguments lists the commands and switches (saved in
-  `testdata/parity/7zr-usage.txt`).
-- The 64-bit lane will have the same two fixtures from `7za-x64.exe`
-  (`7za-x64-i.txt`, `7za-x64-usage.txt`), once the harness line is done.
+- `7za i` lists the codecs, formats and hashers.
+- `7za` with no arguments lists the commands and switches.
+- Each lane has its own pair of fixtures generated from its binary:
+  `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`, `7za-x64-i.txt`,
+  `7za-x64-usage.txt` (not yet generated; the committed fixtures today
+  are `7zr-i.txt` and `7zr-usage.txt` from `7zr`). The two builds' lists
+  differ only in the version line and the `Usage:` name.
 
-`go test -tags sot -run TestParity ./...` walks those lists: 84 lines
-(6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches) minus
+`go test -tags sot -run TestParity ./...` walks those lists: 96 lines
+(12 formats + 21 codecs + 5 hashers + 11 commands + 47 switches) minus
 the four codecs the user omitted on 2026-11-06 (PPC, IA64, SPARC,
-RISCV), so 80 per lane.
+RISCV), so 92 per lane.
 Each line is a pass or a fail in each lane. A line the module rejects is a
 fail. A line where the module's bytes differ from that lane's SoT is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
 end (today it prints one unlabelled `parity: N of M` for the 32-bit lane
-only). Parity is `M of M` in both lanes. Omitted lines are listed by
-name in the output, never counted as passes. Report both numbers and nothing
+against the 80-line `7zr` list). Parity is `M of M` in both lanes.
+Omitted lines are listed by name in the output, never counted as
+passes; lines blocked by licensing are failures with that reason. Report both numbers and nothing
 softer.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
@@ -402,10 +422,18 @@ checklist has a public-domain source file:
 | Split volumes                 | format: raw byte split, names `.001`,      |
 |                               | `.002`; semantics observed from the SoT |
 
-The 64-bit `7za` lists 12 lines beyond those 84 (see the end of the
-checklist). Deflate, Deflate64 and BZip2 exist only in the LGPL C++
-layer. If any line ever needs an LGPL encoder, stop and tell the user; do
-not port it and do not pretend a different encoder is the same thing.
+`7za` lists 12 lines beyond those 84; the user counts all of them. The
+public-domain ones have sources: PPMd (`C/Ppmd7.c`, `C/Ppmd7Enc.c`),
+SHA1 (`C/Sha1.c`), XXH64 (`C/Xxh64.c`), the zstd decoder
+(`C/ZstdDec.c`, decode only, as 7-Zip lists it), and the tar and zip
+containers (public formats, reproduced from observation like the 7z
+writer). Deflate, Deflate64 and BZip2 exist only in the LGPL C++ layer,
+and gzip and bzip2 are those codecs with a header; the Cab reader is
+LGPL C++ too. Those lines are marked `blocked: LGPL-only source`. If any
+line ever needs an LGPL encoder, stop and tell the user; do not port it
+and do not pretend a different encoder is the same thing. The user has
+been told (2026-11-06) and has not yet said what to do about the blocked
+lines.
 
 ## The checklist
 
@@ -416,19 +444,22 @@ run, so every box is open.
 
 ### Harness (the 64-bit lane does not exist until these are done)
 
-- [ ] 64-bit SoT placed and pinned: `tools/fetch-sot.ps1` fetches
-      `7z2605-extra.7z` (SHA-256 in the lane section), extracts
-      `x64/7za.exe` with the verified 32-bit SoT, verifies SHA-256
-      `7ddf0a3b…484291`, places `tools/sot/7za-x64.exe`;
-      `testdata/SOT.md` records it: not done
+- [ ] Both SoTs placed and pinned: `tools/fetch-sot.ps1` fetches
+      `7z2605-extra.7z` (SHA-256 in the lane section), extracts `7za.exe`
+      and `x64/7za.exe` with the verified `7zr.exe`, verifies their
+      SHA-256s, places `tools/sot/7za-x86.exe` and `tools/sot/7za-x64.exe`;
+      `testdata/SOT.md` records both: not done
 - [ ] `internal/sot` takes a lane (`Binary(root, lane)`, `Run`,
-      `RunBinary`) and verifies the 64-bit hash and version line: not done
-- [ ] Fixtures `testdata/parity/7za-x64-i.txt` and `7za-x64-usage.txt`
-      committed and checked against live output like the 32-bit ones:
-      not done
+      `RunBinary`) and verifies each lane's hash and version line: not
+      done
+- [ ] Fixtures `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`,
+      `7za-x64-i.txt`, `7za-x64-usage.txt` committed and checked against
+      live output like the `7zr` ones: not done
 - [ ] TestParity walks every line in both lanes, subtests `32/<key>` and
-      `64/<key>`, prints `parity 32: N of 80` and `parity 64: N of 80`:
-      not done
+      `64/<key>`, prints `parity 32: N of 92` and `parity 64: N of 92`,
+      lists omitted and blocked lines by name: not done
+- [ ] The five lines proven against `7zr` (Copy, LZMA, LZMA2, BCJ,
+      format/7z) re-run against `7za-x86.exe` and pass: not done
 - [ ] `sotSizeT` becomes a per-encoder build setting (32 or 64) that
       the lane selects; the 64-bit setting reproduces 2^27/2^28/2^28 at
       mx7/8/9 (lane item 2): not done
@@ -438,7 +469,7 @@ run, so every box is open.
       dictionaries are reached, and one at mx6 with default threads so
       the block layout (lane item 3) is reached: not done
 
-### Codecs (`7zr i`; 13 counted, 4 omitted)
+### Codecs (`7za i`; 17 counted, 4 omitted)
 
 - [ ] Copy: 32 done: `TestEncodeSoTCopy` (parity key `codec/Copy`);
       64 not done
@@ -461,6 +492,19 @@ run, so every box is open.
 - [ ] 7zAES: 32 not done; 64 not done
 - [ ] AES256CBC (`-m0=AES256CBC` as a coder; same cipher as 7zAES
       without key derivation): 32 not done; 64 not done
+- [ ] PPMD (`C/Ppmd7.c`, `C/Ppmd7Enc.c`): 32 not done; 64 not done
+- [ ] Deflate: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
+- [ ] Deflate64: 32 blocked: LGPL-only source; 64 blocked: LGPL-only
+      source
+- [ ] BZip2: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
+
+### Hashers (`7za i`)
+
+- [ ] CRC32: 32 not done; 64 not done
+- [ ] CRC64: 32 not done; 64 not done
+- [ ] SHA256: 32 not done; 64 not done
+- [ ] SHA1 (`C/Sha1.c`): 32 not done; 64 not done
+- [ ] XXH64 (`C/Xxh64.c`): 32 not done; 64 not done
 
 ### Filter automation (what `-mf` does by default)
 
@@ -472,7 +516,7 @@ run, so every box is open.
       32 not done; 64 not done
 - [ ] `-myv`, `-myfa`, `-myfd`: 32 not done; 64 not done
 
-### Formats (`7zr i`, `-t`)
+### Formats (`7za i`, `-t`)
 
 - [ ] 7z: 32 done: `TestSoT7z` (parity key `format/7z`); 64 not done
 - [ ] xz (`-txz`, with `-mf` filters, `-mmt` block splitting, check type;
@@ -483,6 +527,19 @@ run, so every box is open.
 - [ ] Split (`-v{Size}` volumes on creation; `.001` reading): 32 not done;
       64 not done
 - [ ] Hash (`h` command, `-scrc`, hash formats): 32 not done; 64 not done
+- [ ] tar (`-ttar`; public format, no SDK source, reproduced from
+      observation): 32 not done; 64 not done
+- [ ] zip (`-tzip`; container from APPNOTE and observation; payload
+      methods Copy, LZMA, PPMd and the AES variants are portable, the
+      default Deflate payload is LGPL-only): 32 not done; 64 not done
+- [ ] zstd (`C/ZstdDec.c`, read side only, as 7-Zip lists it): 32 not
+      done; 64 not done
+- [ ] Cab (read-only in 7-Zip; LGPL C++ reader): 32 blocked: LGPL-only
+      source; 64 blocked: LGPL-only source
+- [ ] gzip (needs Deflate): 32 blocked: LGPL-only source; 64 blocked:
+      LGPL-only source
+- [ ] bzip2 (needs BZip2): 32 blocked: LGPL-only source; 64 blocked:
+      LGPL-only source
 
 ### Commands
 
@@ -496,7 +553,7 @@ run, so every box is open.
 - [ ] b (benchmark; passes when it runs and prints the same fields): 32 not
       done; 64 not done
 
-### Switches (`7zr` usage)
+### Switches (`7za` usage)
 
 - [ ] -m (every parameter the SoT accepts after `-m`, observed from it;
       the LZMA/LZMA2 subset is mapped in
@@ -509,14 +566,15 @@ run, so every box is open.
       done; 64 not done
 - [ ] -si, -so, -w, -sdel, -sse, -ssw, -stl, -ssp, -snh, -snl, -sni, -sns:
       32 not done; 64 not done
-- [ ] -bb, -bd, -bs, -bt, -scc, -scs, -scrc, -slp, -stm, -stx, -sfx,
-      -seml, --: 32 not done; 64 not done
+- [ ] -bb, -bd, -bs, -bt, -scc, -scs, -scrc (with SHA1 and XXH64 as
+      `7za` lists them), -slp, -stm, -stx, -sfx, -seml, --: 32 not done;
+      64 not done
 
-### Lines only the 64-bit SoT lists (user decision pending)
+### Lines only `7za` lists (decided 2026-11-06: all count)
 
-`7za i` on the 64-bit binary lists these in addition to the 84 above.
-They are not counted in either lane until the user says whether they are
-in scope. The source column is the fact that forces the question.
+`7za i` lists these in addition to the 84 `7zr` lines. The user ruled
+that all count; they are placed in the sections above and repeated here
+with their source situation.
 
 | Line                       | Kind   | Source situation                                    |
 | -------------------------- | ------ | --------------------------------------------------- |
@@ -540,7 +598,9 @@ Top to bottom. No reordering by what seems important. The harness section
 comes first, because without it the 64-bit lane cannot mark anything.
 Then the four lines already done on the 32-bit lane (Copy, LZMA, LZMA2,
 BCJ) and format/7z get their 64-bit mark, which is where the mx7..9
-dictionary difference and the mx6 block layout are proven. Then BCJ2 and
+dictionary difference and the mx6 block layout are proven. The lines
+marked `blocked: LGPL-only source` are skipped when reached and reported
+as blocked; they do not stop the lines after them. Then BCJ2 and
 down the list, each line in both lanes before the next line: port the
 public-domain source faithfully, add its line to the parity test, run
 both SoTs, mark both lanes. Commit per line. Never spend a session on
