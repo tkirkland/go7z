@@ -169,8 +169,8 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `6218c03` (7z container), `3f3a43c` (module path), `42fabb6`..`de800ff`
   (IDE files, README, LICENSE, perf test), `c8e1e39` (BCJ filter,
   `bra/`, container bonds), `c25250f`..`cb927d3` (two-lane harness,
-  fixtures, docs), then the BCJ2 commit (`bra/bcj2.go`, generic folder
-  decoder, BCJ2 folders in the writer) and this handoff revision.
+  fixtures, docs), `d503515` (BCJ2: `bra/bcj2.go`, generic folder
+  decoder, BCJ2 folders in the writer), then this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
