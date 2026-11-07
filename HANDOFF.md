@@ -156,7 +156,8 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. The six LGPL-only lines are
   in `parity.Blocked` and fail with that reason. Current baseline:
-  **32-bit lane 5 of 92; 64-bit lane 5 of 92** (both against `7za`, large inputs included). A full run takes about 12 minutes for the
+  **32-bit lane 5 of 92; 64-bit lane 5 of 92** (both against `7za`,
+  large inputs included). A full run takes about 12 minutes for the
   small matrices plus the large cases (below).
 - `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
   `Binary(root, lane)` verifies hash and version line (cached per
@@ -390,8 +391,8 @@ fail. A line where the module's bytes differ from that lane's SoT is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
 end. Parity is `M of M` in both lanes.
 Omitted lines are listed by name in the output, never counted as
-passes; lines blocked by licensing are failures with that reason. Report both numbers and nothing
-softer.
+passes; lines blocked by licensing are failures with that reason.
+Report both numbers and nothing softer.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
 and IV; `b` benchmark prints timings), the line passes when: the module
@@ -429,7 +430,7 @@ checklist has a public-domain source file:
 |                               | (SHA-256 over salt+password(UTF-16LE)+     |
 |                               | counter, 2^19 rounds, salt 0 bytes, IV 16  |
 |                               | bytes by default): re-verify against this  |
-|                               | SoT before relying on it                |
+|                               | SoT before relying on it                   |
 | xz format                     | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`,        |
 |                               | `C/XzIn.c`, `C/XzCrc64.c`                  |
 | lzma, lzma86 formats          | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the   |
@@ -438,7 +439,7 @@ checklist has a public-domain source file:
 |                               | (Go stdlib gives identical values;         |
 |                               | identity is on output format)              |
 | Split volumes                 | format: raw byte split, names `.001`,      |
-|                               | `.002`; semantics observed from the SoT |
+|                               | `.002`; semantics observed from the SoT    |
 
 `7za` lists 12 lines beyond those 84; the user counts all of them. The
 public-domain ones have sources: PPMd (`C/Ppmd7.c`, `C/Ppmd7Enc.c`),
@@ -601,21 +602,24 @@ box is ticked only when both lanes are done.
 that all count; they are placed in the sections above and repeated here
 with their source situation.
 
-| Line                       | Kind   | Source situation                                    |
-| -------------------------- | ------ | --------------------------------------------------- |
-| Deflate, Deflate64 codecs  | codec  | LGPL C++ only (no `C/` file either way)             |
-| BZip2 codec                | codec  | LGPL C++ only                                       |
-| PPMD codec                 | codec  | `C/Ppmd7.c`, `C/Ppmd7Enc.c` are public domain       |
-| SHA1, XXH64 hashers        | hasher | `C/Sha1.c`, `C/Xxh64.c` public domain               |
-| `-scrc` SHA1/XXH64 options | switch | follows the hashers                                 |
-| zstd format                | format | `C/ZstdDec.c` public domain, decoder only (7-Zip    |
-|                            |        | lists it decode-only)                               |
-| Cab format                 | format | read-only in 7-Zip; C++ LGPL reader                 |
-| tar format                 | format | C++ LGPL handler; the format itself is public       |
-| gzip format                | format | needs Deflate                                       |
-| bzip2 format               | format | needs BZip2                                         |
-| zip format                 | format | container is public (APPNOTE); default payload is   |
-|                            |        | Deflate                                             |
+| Line                       | Kind   | Source situation                       |
+| -------------------------- | ------ | -------------------------------------- |
+| Deflate, Deflate64 codecs  | codec  | LGPL C++ only (no `C/` file either     |
+|                            |        | way)                                   |
+| BZip2 codec                | codec  | LGPL C++ only                          |
+| PPMD codec                 | codec  | `C/Ppmd7.c`, `C/Ppmd7Enc.c` are public |
+|                            |        | domain                                 |
+| SHA1, XXH64 hashers        | hasher | `C/Sha1.c`, `C/Xxh64.c` public domain  |
+| `-scrc` SHA1/XXH64 options | switch | follows the hashers                    |
+| zstd format                | format | `C/ZstdDec.c` public domain, decoder   |
+|                            |        | only (7-Zip lists it decode-only)      |
+| Cab format                 | format | read-only in 7-Zip; C++ LGPL reader    |
+| tar format                 | format | C++ LGPL handler; the format itself is |
+|                            |        | public                                 |
+| gzip format                | format | needs Deflate                          |
+| bzip2 format               | format | needs BZip2                            |
+| zip format                 | format | container is public (APPNOTE); default |
+|                            |        | payload is Deflate                     |
 
 ## Order of work
 
