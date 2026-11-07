@@ -11,11 +11,13 @@ package copycoder
 import "io"
 
 // Encode copies r to w unchanged and returns the number of bytes written.
+// noinspection GoUnusedExportedFunction
 func Encode(w io.Writer, r io.Reader) (int64, error) {
 	return io.Copy(w, r)
 }
 
 // Decode copies r to w unchanged and returns the number of bytes written.
+// noinspection GoUnusedExportedFunction
 func Decode(w io.Writer, r io.Reader) (int64, error) {
 	return io.Copy(w, r)
 }
