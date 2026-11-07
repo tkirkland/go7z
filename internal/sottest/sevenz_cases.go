@@ -230,6 +230,39 @@ func SevenZCases(exe []byte) []SevenZCase {
 	armt("armt_tree_copy_ms_off", armtTree, []string{"armt"}, []string{"-m0=ARMT", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
 	armt("armt_pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=ARMT"}, sevenzip.Options{})
 	armt("armt_mixed", mixed, mixedInputs, []string{"-mf=ARMT"}, sevenzip.Options{})
+	// ARM64 filter: the same shapes over BL/ADRP patterns.
+	arm64Tree := []TreeFile{
+		{"arm64/a.bin", ARM64Pattern(100001, 1)},
+		{"arm64/b.bin", ARM64Pattern(200002, 2)},
+		{"arm64/c.bin", ARM64Pattern(2003, 3)},
+		{"arm64/empty.bin", nil},
+		{"arm64/dir/", nil},
+	}
+	arm64One := []TreeFile{{"in/arm64.bin", ARM64Pattern(300000, 7)}}
+	arm64 := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Filter = sevenzip.ARM64
+		add(name, files, inputs, args, opts)
+	}
+	arm64("arm64_only", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64"}, sevenzip.Options{Method: sevenzip.None})
+	arm64("arm64_only_hc_off", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	arm64("arm64_lzma2", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=LZMA2"}, sevenzip.Options{})
+	arm64("arm64_lzma2_hc_off", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	arm64("arm64_lzma2_mx1", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=LZMA2", "-mx=1"}, sevenzip.Options{Level: 1})
+	arm64("arm64_lzma2_mx9", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=LZMA2", "-mx=9"}, sevenzip.Options{Level: 9})
+	arm64("arm64_lzma", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	arm64("arm64_copy", arm64One, []string{"in/arm64.bin"}, []string{"-m0=ARM64", "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	arm64("arm64_mf", arm64One, []string{"in/arm64.bin"}, []string{"-mf=ARM64"}, sevenzip.Options{})
+	arm64("arm64_mf_mx0", arm64One, []string{"in/arm64.bin"}, []string{"-mf=ARM64", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	arm64("arm64_tree_only", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64"}, sevenzip.Options{Method: sevenzip.None})
+	arm64("arm64_tree_only_ms_off", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+	arm64("arm64_tree_lzma2", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=LZMA2"}, sevenzip.Options{})
+	arm64("arm64_tree_lzma2_hc_off", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	arm64("arm64_tree_lzma2_ms_off", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=LZMA2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	arm64("arm64_tree_lzma2_ms_150k", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=LZMA2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	arm64("arm64_tree_lzma", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	arm64("arm64_tree_copy_ms_off", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+	arm64("arm64_pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=ARM64"}, sevenzip.Options{})
+	arm64("arm64_mixed", mixed, mixedInputs, []string{"-mf=ARM64"}, sevenzip.Options{})
 	// BCJ2: alone (-m0=BCJ2), forced with -mf=BCJ2 in front of each
 	// method and level (the four-coder folder with the LZMA side
 	// streams), the same trees as BCJ, and a tree whose files hold calls

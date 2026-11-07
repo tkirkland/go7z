@@ -35,3 +35,15 @@ func TestEncodeSoTARMT(t *testing.T) {
 		})
 	}
 }
+
+// TestEncodeSoTARM64 is the same proof for the ARM64 converter
+// (-m0=ARM64); the matrix is the parity check for codec/ARM64.
+func TestEncodeSoTARM64(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunARM64Matrix(t, root, lane)
+		})
+	}
+}

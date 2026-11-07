@@ -1163,6 +1163,26 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 		}
 		copy(out, in)
 		bra.ARMTDecode(out)
+	case MethodARM64:
+		// 7zDec.c: z7_BranchConv_ARM64_Dec over the whole stream with the
+		// pc from a 4-byte property (a multiple of 4), 0 without one. The
+		// SoT writes none (-m0=ARM64:pc=N is rejected).
+		var pc uint32
+		switch len(c.props) {
+		case 0:
+		case 4:
+			pc = uint32(c.props[0]) | uint32(c.props[1])<<8 | uint32(c.props[2])<<16 | uint32(c.props[3])<<24
+			if pc&3 != 0 {
+				return nil, ErrUnsupported
+			}
+		default:
+			return nil, ErrUnsupported
+		}
+		if inSize != outSize {
+			return nil, ErrData
+		}
+		copy(out, in)
+		bra.ARM64Convert(out, pc, false)
 	case MethodLZMA:
 		written, consumed, status, err := lzma.DecodeOneShot(out, in, c.props, lzma.FinishEnd)
 		if err != nil {

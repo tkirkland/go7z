@@ -1,7 +1,7 @@
 # go7z
 
-A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2, ARM and
-ARMT filters and the 7z container, written to be byte-identical to
+A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2, ARM, ARMT
+and ARM64 filters and the 7z container, written to be byte-identical to
 7-Zip itself.
 
 The source of truth (SoT, the word used throughout this repo) is a pinned
@@ -19,7 +19,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 8 of 92; 64-bit lane 8 of 92**. Six lines (Deflate,
+**32-bit lane 9 of 92; 64-bit lane 9 of 92**. Six lines (Deflate,
 Deflate64, BZip2, Cab, gzip, bzip2) have no public-domain source and
 are counted as blocked.
 
@@ -32,10 +32,11 @@ are counted as blocked.
 | codec/BCJ2        | `bra`: four-stream x86 converter, 44 cases identical     |
 | codec/ARM         | `bra`: ARM BL converter, 39 cases identical              |
 | codec/ARMT        | `bra`: Thumb BL converter, 48 cases identical            |
-| format/7z         | `sevenzip`: 161 archives identical, all read back        |
+| codec/ARM64       | `bra`: AArch64 BL/ADRP converter, 51 cases identical     |
+| format/7z         | `sevenzip`: 181 archives identical, all read back        |
 
-Everything else (the ARM64 filter, Swap, Delta, encryption,
-xz/lzma formats, the CLI commands and switches) is not done. See `HANDOFF.md`
+Everything else (Swap, Delta, encryption, xz/lzma formats, the CLI
+commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
 ## Packages
@@ -45,7 +46,7 @@ for the full checklist and the order of work.
   `Lzma2Enc.c`, `LzmaDec.c`, `Lzma2Dec.c`).
 - `copycoder`: the Copy (store) coder.
 - `bra`: the branch converters: BCJ (x86), ported from `Bra86.c`, and
-  ARM and ARMT, ported from `Bra.c`, as whole-buffer functions and as
+  ARM, ARMT and ARM64, ported from `Bra.c`, as whole-buffer functions and as
   streaming readers; BCJ2, ported from `Bcj2Enc.c` and `Bcj2.c`, as the SDK's
   state machines plus whole-buffer and streaming four-stream encoders
   and a decoder.
@@ -75,7 +76,7 @@ for i, e := range a.Entries {
 ```
 
 `Options` covers the method (LZMA2, LZMA, Copy, or the filter alone),
-the BCJ, BCJ2, ARM and ARMT filters, level, solid mode and block size,
+the BCJ, BCJ2, ARM, ARMT and ARM64 filters, level, solid mode and block size,
 header
 compression, threads and which timestamps to store.
 Raw codec streams are available through `lzma.EncodeBytes`,

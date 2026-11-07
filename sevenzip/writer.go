@@ -56,6 +56,10 @@ const (
 	BCJ2
 	ARM  // ARM (32-bit) BL converter (bra.ARMConvert); same folder shapes as BCJ
 	ARMT // Thumb BL converter (bra.ARMTConvert); same folder shapes as BCJ
+	// ARM64 is the AArch64 BL/ADRP converter (bra.ARM64Convert); same
+	// folder shapes as BCJ. Observed: coder record 01 0A (1-byte id, no
+	// properties) in both lanes; the SoT rejects -m0=ARM64:pc=N.
+	ARM64
 )
 
 // LevelStore is the Level value for -mx0.
@@ -340,6 +344,8 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		filterID = MethodARM
 	case ARMT:
 		filterID = MethodARMT
+	case ARM64:
+		filterID = MethodARM64
 	default:
 		return fmt.Errorf("sevenzip: unknown filter %d", w.opts.Filter)
 	}
@@ -412,6 +418,8 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			src = bra.NewARMEncodeReader(fr)
 		case MethodARMT:
 			src = bra.NewARMTEncodeReader(fr)
+		case MethodARM64:
+			src = bra.NewARM64EncodeReader(fr)
 		}
 		var err error
 		if p.filterID == MethodBCJ2 {
