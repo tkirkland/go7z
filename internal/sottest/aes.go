@@ -45,7 +45,7 @@ func AESCases(exe []byte) []SevenZCase {
 	add("one_lzma", one, []string{"in/a.bin"}, p("-m0=LZMA"), o(sevenzip.Options{Method: sevenzip.LZMA}))
 	add("one_copy", one, []string{"in/a.bin"}, p("-m0=Copy"), o(sevenzip.Options{Method: sevenzip.Copy}))
 	add("one_mt1", one, []string{"in/a.bin"}, p("-mmt1"), o(sevenzip.Options{Threads: 1}))
-	add("pe", pe, []string{"in/pe.exe"}, p("-mf=off"), o(sevenzip.Options{}))
+	add("pe", pe, []string{"in/pe.exe"}, p("-mf=off"), o(sevenzip.Options{NoAutoFilter: true}))
 	add("pe_bcj", pe, []string{"in/pe.exe"}, p("-mf=BCJ"), o(sevenzip.Options{Filter: sevenzip.BCJ}))
 	add("pe_bcj_only", pe, []string{"in/pe.exe"}, p("-m0=BCJ"), o(sevenzip.Options{Filter: sevenzip.BCJ, Method: sevenzip.None}))
 	add("pe_bcj_copy", pe, []string{"in/pe.exe"}, p("-mf=BCJ", "-mx=0"), o(sevenzip.Options{Filter: sevenzip.BCJ, Level: sevenzip.LevelStore}))
