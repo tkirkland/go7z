@@ -1169,9 +1169,6 @@ func DecodeOneShot(dst, src, props []byte, finish FinishMode) (written, consumed
 	if len(src) < rcInitSize {
 		return 0, 0, status, ErrInputEOF
 	}
-	if len(dst) == 0 {
-		return 0, 0, status, nil
-	}
 	p, err := DecodeProps(props)
 	if err != nil {
 		return 0, 0, status, err

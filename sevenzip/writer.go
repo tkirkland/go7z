@@ -46,6 +46,14 @@ type Filter int
 const (
 	NoFilter Filter = iota
 	BCJ             // x86 (bra.X86Convert)
+	// BCJ2 is the four-stream x86 converter (bra.Bcj2Encoder). Observed:
+	// -mf=BCJ2 (or -m0=BCJ2 -m1=<M> -m2=LZMA -m3=LZMA with the bonds
+	// 7-Zip writes) gives a four-coder folder: two LZMA coders for the
+	// JUMP and CALL streams (dictionary 1 MB, lc0 lp2, fb 128, normal
+	// parser, bt4), the method for MAIN, then BCJ2; the RC stream is a
+	// pack stream as is. With Method None (-m0=BCJ2 alone) the folder's
+	// only coder is BCJ2 with four pack streams MAIN, CALL, JUMP, RC.
+	BCJ2
 )
 
 // LevelStore is the Level value for -mx0.
@@ -277,11 +285,25 @@ func (w *Writer) level() int {
 type folderPlan struct {
 	items      []int // indices into sorted items
 	unpackSize uint64
-	packSize   uint64
+	packSize   uint64 // total of packSizes
 	coderID    uint32 // main coder; MethodCopy when the filter stands alone (not written then)
 	coderProps []byte
 	filterID   uint32 // 0 = no filter; otherwise the second coder, bound to the first
 	noCoder    bool   // Method None: the filter is the only coder
+
+	// BCJ2 folders have four pack streams, in stored order (packSizes),
+	// LZMA side coders (sideProps) and one unpack size per coder.
+	packSizes  []uint64
+	sideProps  []byte
+	sideUnpack [3]uint64 // JUMP, CALL, MAIN stream sizes
+}
+
+// packStreamCount is how many pack streams the plan's folder has.
+func (p *folderPlan) packStreamCount() int {
+	if p.filterID == MethodBCJ2 {
+		return 4
+	}
+	return 1
 }
 
 // Write writes the archive. out must support seeking back to the start
@@ -310,6 +332,8 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		}
 	case BCJ:
 		filterID = MethodBCJ
+	case BCJ2:
+		filterID = MethodBCJ2
 	default:
 		return fmt.Errorf("sevenzip: unknown filter %d", w.opts.Filter)
 	}
@@ -379,6 +403,29 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			src = bra.NewX86EncodeReader(fr)
 		}
 		var err error
+		if p.filterID == MethodBCJ2 {
+			sizes := make([]uint64, len(p.items))
+			for i, it := range p.items {
+				sizes[i] = items[it].size
+			}
+			if method == None {
+				err = encodeBCJ2Only(p, fr, cw, sizes)
+			} else {
+				err = w.encodeBCJ2Folder(p, fr, cw, method, dataTotal, sizes)
+			}
+			if err != nil {
+				return err
+			}
+			if err := fr.Close(); err != nil {
+				return err
+			}
+			if fr.total != p.unpackSize {
+				return fmt.Errorf("sevenzip: %s changed size while reading", items[p.items[len(p.items)-1]].path)
+			}
+			p.packSize = cw.n
+			packTotal += cw.n
+			continue
+		}
 		switch method {
 		case None:
 			_, err = io.Copy(cw, src)
@@ -477,6 +524,162 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	return err
 }
 
+// bcj2SideProps are the LZMA parameters the SoT uses for the CALL and
+// JUMP streams of a BCJ2 folder, at every level including -mx0
+// (observed 2026-11-06 on both builds by byte identity with the SoT's
+// side streams for the SoT binary and a 100 KB slice of it: dictionary
+// 1 MB reduced like the main coder, lc 0, lp 2, pb 2, fb 128, normal
+// parser, bt4; fb 64 and bt3/bt5 also matched some streams, 128 and
+// bt4 matched all of them). The data-size hint made no difference and
+// is not given.
+func (w *Writer) bcj2SideProps(reduceSize uint64) lzma.EncProps {
+	var p lzma.EncProps
+	p.Init()
+	p.DictSize = 1 << 20
+	p.Lc, p.Lp, p.Pb = 0, 2, 2
+	p.Fb = 128
+	p.Algo = 1
+	p.BtMode, p.NumHashBytes = 1, 4
+	p.ReduceSize = reduceSize
+	p.WordSize = w.opts.WordSize
+	return p
+}
+
+// encodeBCJ2Folder encodes one folder behind BCJ2: the converter runs
+// over the folder's data file by file (bra.Bcj2Encoder.FileSizes;
+// observed: each file is converted with its own start address and
+// size, and the block is finished at every file boundary), MAIN goes through the method straight to out, CALL and
+// JUMP through the side LZMA coders into memory and RC into memory, and
+// the three are written after MAIN in the order the SoT stores them
+// (MAIN packed, RC, CALL packed, JUMP packed). Like 7-Zip's mixer, no
+// coder is told its data size.
+func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter, method Method, dataTotal uint64, fileSizes []uint64) error {
+	mainR, mainW := io.Pipe()
+	callR, callW := io.Pipe()
+	jumpR, jumpW := io.Pipe()
+	var rc, callPacked, jumpPacked bytes.Buffer
+	var callN, jumpN uint64
+	errc := make(chan error, 3)
+
+	go func() {
+		enc := bra.Bcj2Encoder{FileSizes: fileSizes}
+		err := enc.Encode([bra.Bcj2NumStreams]io.Writer{mainW, callW, jumpW, &rc}, src)
+		if err == nil {
+			// The converter reads exactly the files' sizes; read on to the
+			// end so the source sees EOF (and any growth is reported).
+			_, err = io.Copy(io.Discard, src)
+		}
+		mainW.CloseWithError(err)
+		callW.CloseWithError(err)
+		jumpW.CloseWithError(err)
+		errc <- err
+	}()
+
+	sideProps := w.bcj2SideProps(dataTotal)
+	side := func(r *io.PipeReader, dst *bytes.Buffer, n *uint64) {
+		enc := lzma.NewEncoder()
+		err := enc.SetProps(&sideProps)
+		if err == nil {
+			cr := &countReader{r: r}
+			err = enc.Encode(dst, cr)
+			*n = cr.n
+		}
+		r.CloseWithError(err)
+		errc <- err
+	}
+	go side(callR, &callPacked, &callN)
+	go side(jumpR, &jumpPacked, &jumpN)
+
+	mainIn := &countReader{r: mainR}
+	var err error
+	switch method {
+	case Copy:
+		p.coderID = MethodCopy
+		_, err = io.Copy(out, mainIn)
+	case LZMA:
+		props, _ := w.lzmaProps()
+		props.ReduceSize = dataTotal
+		enc := lzma.NewEncoder()
+		if err = enc.SetProps(&props); err == nil {
+			pr := enc.WriteProperties()
+			p.coderID, p.coderProps = MethodLZMA, pr[:]
+			err = enc.Encode(out, mainIn)
+		}
+	case LZMA2:
+		props, _ := w.lzma2Props()
+		props.LzmaProps.ReduceSize = dataTotal
+		enc := lzma.NewLzma2Encoder()
+		if err = enc.SetProps(&props); err == nil {
+			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
+			err = enc.Encode(out, mainIn)
+		}
+	default:
+		err = fmt.Errorf("sevenzip: method %d cannot stand behind BCJ2", method)
+	}
+	mainR.CloseWithError(err)
+	for i := 0; i < 3; i++ {
+		if e := <-errc; e != nil && err == nil {
+			err = e
+		}
+	}
+	if err != nil {
+		return err
+	}
+	mainPacked := out.n
+	for _, b := range []*bytes.Buffer{&rc, &callPacked, &jumpPacked} {
+		if _, err := out.Write(b.Bytes()); err != nil {
+			return err
+		}
+	}
+	pr := lzma.NewEncoder()
+	if err := pr.SetProps(&sideProps); err != nil {
+		return err
+	}
+	sp := pr.WriteProperties()
+	p.sideProps = sp[:]
+	p.sideUnpack = [3]uint64{jumpN, callN, mainIn.n}
+	p.packSizes = []uint64{mainPacked, uint64(rc.Len()), uint64(callPacked.Len()), uint64(jumpPacked.Len())}
+	return nil
+}
+
+// encodeBCJ2Only writes a Method None BCJ2 folder: the four streams as
+// pack streams in the order MAIN, CALL, JUMP, RC (observed for
+// -m0=BCJ2 with no -m1).
+func encodeBCJ2Only(p *folderPlan, src io.Reader, out *countWriter, fileSizes []uint64) error {
+	var bufs [bra.Bcj2NumStreams]bytes.Buffer
+	var outs [bra.Bcj2NumStreams]io.Writer
+	for i := range bufs {
+		outs[i] = &bufs[i]
+	}
+	enc := bra.Bcj2Encoder{FileSizes: fileSizes}
+	if err := enc.Encode(outs, src); err != nil {
+		return err
+	}
+	if _, err := io.Copy(io.Discard, src); err != nil {
+		return err
+	}
+	p.packSizes = make([]uint64, bra.Bcj2NumStreams)
+	for i := range bufs {
+		if _, err := out.Write(bufs[i].Bytes()); err != nil {
+			return err
+		}
+		p.packSizes[i] = uint64(bufs[i].Len())
+	}
+	return nil
+}
+
+// countReader counts bytes read through it.
+type countReader struct {
+	r io.Reader
+	n uint64
+}
+
+func (c *countReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += uint64(n)
+	return n, err
+}
+
 // headerEncProps are the LZMA parameters the SoT uses for the packed
 // header: dictionary 1 MB (in the coder record), fast bytes 273, normal
 // parser, bt2 match finder, default cycles (pinned by byte identity on a
@@ -524,9 +727,11 @@ func appendCoder(b []byte, id uint32, props []byte) []byte {
 // appendFolder writes the folder record of a plan: the main coder, then
 // the filter coder bound to it (observed: coder order method, filter;
 // bond InIndex 1 OutIndex 0; the single pack stream is implicit), or
-// the filter alone for Method None.
+// the filter alone for Method None. BCJ2 folders are appendBCJ2Folder.
 func appendFolder(b []byte, p *folderPlan) []byte {
 	switch {
+	case p.filterID == MethodBCJ2:
+		return appendBCJ2Folder(b, p)
 	case p.filterID == 0:
 		return appendCoder(b, p.coderID, p.coderProps)
 	case p.noCoder:
@@ -543,10 +748,68 @@ func appendFolder(b []byte, p *folderPlan) []byte {
 // numCoders is how many coders the plan's folder has (one unpack size
 // is written per coder).
 func (p *folderPlan) numCoders() int {
-	if p.filterID != 0 && !p.noCoder {
+	switch {
+	case p.filterID == MethodBCJ2 && !p.noCoder:
+		return 4
+	case p.filterID != 0 && !p.noCoder:
 		return 2
 	}
 	return 1
+}
+
+// coderUnpackSize is the unpack size written for coder c of the plan's
+// folder (observed for BCJ2: JUMP, CALL, MAIN, then the folder size;
+// otherwise every coder carries the folder size).
+func (p *folderPlan) coderUnpackSize(c int) uint64 {
+	if p.filterID == MethodBCJ2 && !p.noCoder && c < 3 {
+		return p.sideUnpack[c]
+	}
+	return p.unpackSize
+}
+
+// appendBCJ2Folder writes a BCJ2 folder record (observed from the SoT's
+// -mf=BCJ2 archives, the shape 7zDec.c accepts): coders LZMA (JUMP),
+// LZMA (CALL), the method (MAIN), BCJ2 with four in-streams; bonds
+// in-stream 5 from coder 0, 4 from 1, 3 from 2; pack streams in-streams
+// 2 (MAIN packed), 6 (RC), 1 (CALL packed), 0 (JUMP packed). For Method
+// None the only coder is BCJ2 and its four in-streams are the pack
+// streams in order.
+func appendBCJ2Folder(b []byte, p *folderPlan) []byte {
+	if p.noCoder {
+		b = writeNumber(b, 1)
+		b = appendComplexCoderRecord(b, MethodBCJ2, 4)
+		for i := 0; i < 4; i++ {
+			b = writeNumber(b, uint64(i))
+		}
+		return b
+	}
+	b = writeNumber(b, 4)
+	b = appendCoderRecord(b, MethodLZMA, p.sideProps)
+	b = appendCoderRecord(b, MethodLZMA, p.sideProps)
+	b = appendCoderRecord(b, p.coderID, p.coderProps)
+	b = appendComplexCoderRecord(b, MethodBCJ2, 4)
+	for _, bond := range [][2]uint64{{5, 0}, {4, 1}, {3, 2}} {
+		b = writeNumber(b, bond[0])
+		b = writeNumber(b, bond[1])
+	}
+	for _, ps := range []uint64{2, 6, 1, 0} {
+		b = writeNumber(b, ps)
+	}
+	return b
+}
+
+// appendComplexCoderRecord writes a coder record with numIn in-streams
+// and one out-stream (the 0x10 flag) and no properties.
+func appendComplexCoderRecord(b []byte, id uint32, numIn int) []byte {
+	var idBytes []byte
+	for v := id; v != 0; v >>= 8 {
+		idBytes = append([]byte{byte(v)}, idBytes...)
+	}
+	b = append(b, byte(len(idBytes))|0x10)
+	b = append(b, idBytes...)
+	b = writeNumber(b, uint64(numIn))
+	b = writeNumber(b, 1)
+	return b
 }
 
 // appendCoderRecord writes one coder record (id, number of streams,
@@ -614,10 +877,20 @@ func buildHeader(items []item, plans []folderPlan, storeCTime, storeATime, store
 		// PackInfo
 		h.b = append(h.b, idPackInfo)
 		h.b = writeNumber(h.b, 0)
-		h.b = writeNumber(h.b, uint64(len(plans)))
+		numPack := 0
+		for i := range plans {
+			numPack += plans[i].packStreamCount()
+		}
+		h.b = writeNumber(h.b, uint64(numPack))
 		h.b = append(h.b, idSize)
 		for i := range plans {
-			h.b = writeNumber(h.b, plans[i].packSize)
+			if plans[i].packStreamCount() == 1 {
+				h.b = writeNumber(h.b, plans[i].packSize)
+				continue
+			}
+			for _, ps := range plans[i].packSizes {
+				h.b = writeNumber(h.b, ps)
+			}
 		}
 		h.b = append(h.b, idEnd)
 		// UnpackInfo
@@ -630,9 +903,10 @@ func buildHeader(items []item, plans []folderPlan, storeCTime, storeATime, store
 		h.b = append(h.b, idCodersUnpackSize)
 		for i := range plans {
 			// One size per coder; a filter keeps the size (observed:
-			// both sizes equal the folder's unpack size).
+			// both sizes equal the folder's unpack size); BCJ2's side
+			// coders carry their stream sizes.
 			for c := 0; c < plans[i].numCoders(); c++ {
-				h.b = writeNumber(h.b, plans[i].unpackSize)
+				h.b = writeNumber(h.b, plans[i].coderUnpackSize(c))
 			}
 		}
 		h.b = append(h.b, idEnd)

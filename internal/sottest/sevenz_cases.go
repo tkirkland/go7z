@@ -1,6 +1,7 @@
 package sottest
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -161,6 +162,51 @@ func SevenZCases(exe []byte) []SevenZCase {
 	bcj("bcj_tree_many_ms_4m", tenMB, []string{"mb"}, []string{"-mf=BCJ", "-ms=4m"}, sevenzip.Options{SolidSize: 4 << 20})
 	bcj("bcj_small", small, []string{"in/a.txt"}, []string{"-mf=BCJ"}, sevenzip.Options{})
 	bcj("bcj_mixed", mixed, mixedInputs, []string{"-mf=BCJ"}, sevenzip.Options{})
+	// BCJ2: alone (-m0=BCJ2), forced with -mf=BCJ2 in front of each
+	// method and level (the four-coder folder with the LZMA side
+	// streams), the same trees as BCJ, and a tree whose files hold calls
+	// that target beyond their own file but inside the solid block (the
+	// converter's file size is the folder's).
+	bcj2 := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Filter = sevenzip.BCJ2
+		add(name, files, inputs, args, opts)
+	}
+	bcj2("bcj2_only", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ2"}, sevenzip.Options{Method: sevenzip.None})
+	bcj2("bcj2_only_hc_off", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ2", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	bcj2("bcj2_only_mx1", pe, []string{"in/exe.bin"}, []string{"-m0=BCJ2", "-mx=1"}, sevenzip.Options{Method: sevenzip.None, Level: 1})
+	bcj2("mf_bcj2", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2"}, sevenzip.Options{})
+	bcj2("mf_bcj2_hc_off", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	bcj2("mf_bcj2_mx1", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-mx=1"}, sevenzip.Options{Level: 1})
+	bcj2("mf_bcj2_mx9", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-mx=9"}, sevenzip.Options{Level: 9})
+	bcj2("mf_bcj2_lzma", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-m0=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	bcj2("mf_bcj2_lzma_hc_off", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-m0=LZMA", "-mhc=off"}, sevenzip.Options{Method: sevenzip.LZMA, NoHeaderCompression: true})
+	bcj2("mf_bcj2_copy", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-m0=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	bcj2("mf_bcj2_mx0", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	bcj2("mf_bcj2_mt1", pe, []string{"in/exe.bin"}, []string{"-mf=BCJ2", "-mmt1"}, sevenzip.Options{Threads: 1})
+	bcj2("bcj2_tree_only", peTree, []string{"pe"}, []string{"-m0=BCJ2"}, sevenzip.Options{Method: sevenzip.None})
+	bcj2("bcj2_tree_only_hc_off", peTree, []string{"pe"}, []string{"-m0=BCJ2", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	bcj2("bcj2_tree_only_ms_off", peTree, []string{"pe"}, []string{"-m0=BCJ2", "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+	bcj2("bcj2_tree_only_ms_150k", peTree, []string{"pe"}, []string{"-m0=BCJ2", "-ms=150k"}, sevenzip.Options{Method: sevenzip.None, SolidSize: 150 << 10})
+	bcj2("bcj2_tree_mf", peTree, []string{"pe"}, []string{"-mf=BCJ2"}, sevenzip.Options{})
+	bcj2("bcj2_tree_mf_hc_off", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	bcj2("bcj2_tree_mf_ms_off", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	bcj2("bcj2_tree_mf_ms_150k", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	bcj2("bcj2_tree_mf_lzma", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-m0=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	bcj2("bcj2_tree_mf_copy", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-m0=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	bcj2("bcj2_tree_mf_copy_ms_off", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-m0=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+	bcj2("bcj2_tree_mf_mx0", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	bcj2("bcj2_tree_many_mx1", tenMB, []string{"mb"}, []string{"-mf=BCJ2", "-mx=1"}, sevenzip.Options{Level: 1})
+	bcj2("bcj2_tree_many_ms_4m", tenMB, []string{"mb"}, []string{"-mf=BCJ2", "-ms=4m"}, sevenzip.Options{SolidSize: 4 << 20})
+	bcj2("bcj2_tree_many_only", tenMB, []string{"mb"}, []string{"-m0=BCJ2"}, sevenzip.Options{Method: sevenzip.None})
+	bcj2("bcj2_small", small, []string{"in/a.txt"}, []string{"-mf=BCJ2"}, sevenzip.Options{})
+	bcj2("bcj2_mixed", mixed, mixedInputs, []string{"-mf=BCJ2"}, sevenzip.Options{})
+	// Each file is 70 KB of calls 100 KB ahead: converted only when the
+	// target lies inside the data the converter is told about.
+	ahead := bytes.Repeat([]byte{0xE8, 0x00, 0x90, 0x01, 0x00}, 14000)
+	aheadTree := []TreeFile{{"ah/a.bin", ahead}, {"ah/b.bin", ahead}, {"ah/c.bin", ahead}}
+	bcj2("bcj2_ahead_solid", aheadTree, []string{"ah"}, []string{"-mf=BCJ2"}, sevenzip.Options{})
+	bcj2("bcj2_ahead_ms_off", aheadTree, []string{"ah"}, []string{"-mf=BCJ2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	bcj2("bcj2_ahead_only", aheadTree, []string{"ah"}, []string{"-m0=BCJ2"}, sevenzip.Options{Method: sevenzip.None})
 	return cases
 }
 

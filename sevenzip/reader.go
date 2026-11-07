@@ -1027,48 +1027,100 @@ func readFileNames(data []byte, entries []Entry) error {
 	return nil
 }
 
-// decodeFolder is SzAr_DecodeFolder + SzFolder_Decode2 for the folders
-// this module can decode (CheckSupportedFolder): one coder, Copy, LZMA
-// or LZMA2, optionally with one filter coder bound to it (two coders,
-// bond in-stream 1 from coder 0, one pack stream). A filter not yet
-// ported and BCJ2 are their own parity lines and return ErrUnsupported.
+// decodeFolder is SzAr_DecodeFolder + SzFolder_Decode2, generalised
+// over the coder graph: the main (unbound) coder is decoded, and each
+// of its in-streams is either a pack stream or the output of the coder
+// bound to it, decoded recursively. 7zDec.c accepts three shapes (one
+// coder; a method with a filter bound behind it; two LZMA side coders,
+// a main coder and BCJ2) and the SoT writes two more (BCJ2 alone with
+// four pack streams; BCJ2 with only its MAIN stream compressed), all of
+// which this covers. Coders are Copy, LZMA, LZMA2, BCJ and BCJ2; a
+// filter not yet ported returns ErrUnsupported.
 func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error) {
 	f := &p.folders[fo]
-	outSize := f.unpackSize()
-	var filter *coderInfo
-	switch len(f.coders) {
-	case 1:
-		if len(f.packStreams) != 1 || f.packStreams[0] != 0 || len(f.bonds) != 0 {
-			return nil, ErrUnsupported
-		}
-	case 2:
-		filter = &f.coders[1]
-		if filter.numStreams != 1 || len(f.packStreams) != 1 || f.packStreams[0] != 0 ||
-			len(f.bonds) != 1 || f.bonds[0].inIndex != 1 || f.bonds[0].outIndex != 0 {
-			return nil, ErrUnsupported
-		}
-		switch filter.methodID {
-		case MethodBCJ:
-			if len(filter.props) != 0 {
-				return nil, ErrUnsupported
-			}
-		default:
-			return nil, ErrUnsupported
-		}
-	default:
-		return nil, ErrUnsupported
+	d := &folderDecoder{a: a, p: p, f: f, dataStart: dataStart, visited: make([]bool, len(f.coders))}
+	d.base = make([]int, len(f.coders))
+	n := 0
+	for i := range f.coders {
+		d.base[i] = n
+		n += int(f.coders[i].numStreams)
 	}
-	c := &f.coders[0]
-	if c.numStreams != 1 {
-		return nil, ErrUnsupported
-	}
-	packIndex := f.startPackStream
-	offset := p.packPositions[packIndex]
-	inSize := p.packPositions[packIndex+1] - offset
-	in, err := a.readAt(dataStart+offset, inSize)
+	out, err := d.decodeCoder(int(f.unpackStream))
 	if err != nil {
 		return nil, err
 	}
+	if uint64(len(out)) != f.unpackSize() {
+		return nil, ErrData
+	}
+	if f.crcDefined && crc(out) != f.crc {
+		return nil, ErrCRC
+	}
+	return out, nil
+}
+
+// folderDecoder holds the state of one decodeFolder call.
+type folderDecoder struct {
+	a         *Archive
+	p         *szAr
+	f         *folder
+	dataStart uint64
+	base      []int // first in-stream index of each coder
+	visited   []bool
+}
+
+// inStream returns the data of folder in-stream idx: a pack stream, or
+// the decoded output of the coder bound to it.
+func (d *folderDecoder) inStream(idx int) ([]byte, error) {
+	for _, b := range d.f.bonds {
+		if int(b.inIndex) == idx {
+			return d.decodeCoder(int(b.outIndex))
+		}
+	}
+	for i, ps := range d.f.packStreams {
+		if int(ps) == idx {
+			pi := d.f.startPackStream + i
+			off := d.p.packPositions[pi]
+			return d.a.readAt(d.dataStart+off, d.p.packPositions[pi+1]-off)
+		}
+	}
+	return nil, ErrArchive
+}
+
+// decodeCoder decodes coder ci of the folder to its unpack size.
+func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
+	if ci < 0 || ci >= len(d.f.coders) || d.visited[ci] {
+		return nil, ErrArchive
+	}
+	d.visited[ci] = true
+	c := &d.f.coders[ci]
+	outSize := d.f.coderUnpackSize[ci]
+	ins := make([][]byte, c.numStreams)
+	for s := range ins {
+		var err error
+		if ins[s], err = d.inStream(d.base[ci] + s); err != nil {
+			return nil, err
+		}
+	}
+	if c.methodID == MethodBCJ2 {
+		if c.numStreams != 4 || len(c.props) != 0 {
+			return nil, ErrUnsupported
+		}
+		var streams [bra.Bcj2NumStreams][]byte
+		copy(streams[:], ins)
+		if int(outSize) < 0 || uint64(int(outSize)) != outSize {
+			return nil, ErrUnsupported
+		}
+		out, err := bra.Bcj2DecodeBytes(streams, int(outSize))
+		if err != nil {
+			return nil, ErrData
+		}
+		return out, nil
+	}
+	if c.numStreams != 1 {
+		return nil, ErrUnsupported
+	}
+	in := ins[0]
+	inSize := uint64(len(in))
 	out := make([]byte, outSize)
 	switch c.methodID {
 	case MethodCopy:
@@ -1077,14 +1129,18 @@ func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error
 		}
 		copy(out, in)
 	case MethodBCJ:
-		// The filter as the folder's only coder (-m0=BCJ with no -m1).
-		// 7zDec.c rejects this (the first coder must be a main method);
-		// the SoT writes and reads it, so the module reads it too.
-		if filter != nil || len(c.props) != 0 || inSize != outSize {
+		// 7zDec.c runs the branch converter over the whole unpacked
+		// stream with pc 0. As the folder's only coder (-m0=BCJ with no
+		// -m1) 7zDec.c rejects it (the first coder must be a main
+		// method); the SoT writes and reads it, so the module reads it too.
+		if len(c.props) != 0 {
 			return nil, ErrUnsupported
 		}
+		if inSize != outSize {
+			return nil, ErrData
+		}
 		copy(out, in)
-		filter = c
+		bra.X86Decode(out)
 	case MethodLZMA:
 		written, consumed, status, err := lzma.DecodeOneShot(out, in, c.props, lzma.FinishEnd)
 		if err != nil {
@@ -1111,19 +1167,6 @@ func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error
 	default:
 		return nil, ErrUnsupported
 	}
-	if filter != nil {
-		// 7zDec.c: the branch converter runs over the whole unpacked
-		// folder with pc 0.
-		switch filter.methodID {
-		case MethodBCJ:
-			bra.X86Decode(out)
-		default:
-			return nil, ErrUnsupported
-		}
-	}
-	if f.crcDefined && crc(out) != f.crc {
-		return nil, ErrCRC
-	}
 	return out, nil
 }
 
@@ -1149,6 +1192,49 @@ func (a *Archive) Extract(i int) ([]byte, error) {
 	out := a.cacheData[start : start+e.Size]
 	if e.HasCRC && crc(out) != e.CRC {
 		return nil, ErrCRC
+	}
+	return out, nil
+}
+
+// Coder describes one coder record of a folder as stored in the header.
+type Coder struct {
+	MethodID   uint32
+	NumStreams int // number of in-streams (1 for simple coders, 4 for BCJ2)
+	Props      []byte
+}
+
+// NumFolders returns the number of folders (independently packed units).
+func (a *Archive) NumFolders() int { return len(a.db.folders) }
+
+// FolderCoders returns the coder records of folder f in header order.
+func (a *Archive) FolderCoders(f int) []Coder {
+	fo := &a.db.folders[f]
+	out := make([]Coder, len(fo.coders))
+	for i, c := range fo.coders {
+		out[i] = Coder{MethodID: c.methodID, NumStreams: int(c.numStreams), Props: append([]byte(nil), c.props...)}
+	}
+	return out
+}
+
+// FolderUnpackSizes returns the unpack size of each coder of folder f,
+// in coder order.
+func (a *Archive) FolderUnpackSizes(f int) []uint64 {
+	return append([]uint64(nil), a.db.folders[f].coderUnpackSize...)
+}
+
+// FolderPackStreams returns the raw packed streams of folder f in the
+// order they are stored in the archive.
+func (a *Archive) FolderPackStreams(f int) ([][]byte, error) {
+	fo := &a.db.folders[f]
+	out := make([][]byte, len(fo.packStreams))
+	for i := range fo.packStreams {
+		pi := fo.startPackStream + i
+		off := a.db.packPositions[pi]
+		data, err := a.readAt(a.dataPos+off, a.db.packPositions[pi+1]-off)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = data
 	}
 	return out, nil
 }

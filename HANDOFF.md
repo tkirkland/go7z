@@ -8,8 +8,9 @@ Written by the Claude that built go7z on 2026-11-04/05, updated by the
 deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
 2026-11-06 that ported the encoder, by the Claude Fable 5.1 session of
 2026-11-06 that ported BCJ and then, on the user's decision, split the
-work into two lanes, and by the Claude Fable 5.1 session of 2026-11-06
-that built the two-lane harness. Each update integrates what that
+work into two lanes, by the Claude Fable 5.1 session of 2026-11-06
+that built the two-lane harness, and by the Claude Fable 5.1 session of
+2026-11-06 that ported BCJ2. Each update integrates what that
 session actually produced, and what the user established about why
 hand offs keep failing.
 
@@ -129,7 +130,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    mark is `blocked: LGPL-only source` until the user says what to do
    about that, and that mark is reported as such, never as done.
 
-## Session state (2026-11-06, after the two-lane harness session)
+## Session state (2026-11-06, after the BCJ2 session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -156,8 +157,8 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. The six LGPL-only lines are
   in `parity.Blocked` and fail with that reason. Current baseline:
-  **32-bit lane 5 of 92; 64-bit lane 5 of 92** (both against `7za`,
-  large inputs included). A full run takes about 12 minutes for the
+  **32-bit lane 6 of 92; 64-bit lane 6 of 92** (both against `7za`,
+  large inputs included). A full run takes about 14 minutes for the
   small matrices plus the large cases (below).
 - `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
   `Binary(root, lane)` verifies hash and version line (cached per
@@ -167,7 +168,9 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `998f516` (LZMA2 encoder, codec/LZMA2), `106f608` (Copy coder),
   `6218c03` (7z container), `3f3a43c` (module path), `42fabb6`..`de800ff`
   (IDE files, README, LICENSE, perf test), `c8e1e39` (BCJ filter,
-  `bra/`, container bonds), then this handoff revision.
+  `bra/`, container bonds), `c25250f`..`cb927d3` (two-lane harness,
+  fixtures, docs), then the BCJ2 commit (`bra/bcj2.go`, generic folder
+  decoder, BCJ2 folders in the writer) and this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -186,9 +189,12 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
 lane)` (the lane's SoT's own bytes as a real PE input), `SoTXz`,
   `XzSingleBlock`, `SevenZRawStream` (the raw packed stream of a
   single-file .7z starts at offset 32 and its length is the `Packed
-Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
-  `RunCopyMatrix`, `RunBCJMatrix`, `SevenZCases(exe)`, `RunSevenZMatrix`,
-  `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
+Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
+  and raw pack streams through the module's header parser:
+  `Archive.FolderCoders`, `FolderPackStreams`, `FolderUnpackSizes`),
+  `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`, `RunCopyMatrix`,
+  `RunBCJMatrix`, `RunBCJ2Matrix`, `SevenZCases(exe)`,
+  `RunSevenZMatrix`, `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
   it; the `Test...SoT...` tests in `lzma/`, `copycoder/`, `bra/` and
   `sevenzip/` run each matrix once per lane as subtests `32` and `64`.
 - Large inputs (`sottest.LargeCases`): 300 MB of zeros at mx6..9, run in
@@ -242,12 +248,16 @@ Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
   `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
   no public-domain writer source. Both sides handle two-coder folders
   (method + filter, one bond). `number.go` has the variable-length number
-  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 89 cases
-  byte-identical to the 32-bit SoT's archives (Copy, LZMA, LZMA2 at
+  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 121 cases
+  byte-identical to both SoTs' archives (Copy, LZMA, LZMA2 at
   levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and directories,
   nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`, `-mtc=on`,
-  `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases), and the module reads
-  every SoT archive back (names, sizes, CRCs, contents).
+  `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases, 32 BCJ2 cases) plus
+  the large cases, and the module reads every SoT archive back (names,
+  sizes, CRCs, contents). The reader's `decodeFolder` walks the coder
+  graph generically (the main coder's in-streams are pack streams or
+  bound coder outputs, recursively), which covers every shape 7zDec.c
+  accepts and the two more the SoT writes for BCJ2.
 - Container facts observed on the 32-bit SoT (do not re-derive):
   1. Header layout: kHeader, MainStreamsInfo (PackInfo with PackPos 0;
      UnpackInfo with one folder record per folder; SubStreamsInfo with
@@ -308,10 +318,66 @@ Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
   5. The filter output for a stream is the same whether the converter
      runs over the whole buffer or over chunks with the tail carried
      (proven by the 600 KB PE case, where the SoT chunks internally).
-- The executables inside `7z2605-extra.7z` are packed with LZMA + BCJ2
-  (checked with `l -slt`), so the module cannot extract the 64-bit SoT
-  itself until the BCJ2 line is done. The 32-bit SoT extracts it
-  today; that is how the harness line gets the binary.
+- `bra/bcj2.go` (codec/BCJ2): port of `Bcj2Enc.c` and `Bcj2.c`
+  (`Bcj2Enc`, `Bcj2Dec` state machines field for field; `Bcj2Encoder`
+  whole-buffer `EncodeBytes` and streaming `Encode` to four writers;
+  `Bcj2DecodeBytes` with 7zDec.c's finish checks). Proof:
+  `TestEncodeSoTBCJ2` / parity `codec/BCJ2`, 44 cases per lane
+  byte-identical in all four streams to the SoT's `-m0=BCJ2` pack
+  streams (the SoT binary, slices, deterministic data, branch patterns,
+  0F 8x markers, markers at the end, targets beyond the file), the
+  SoT's streams decode back, six read-back shapes, and the module
+  extracts each lane's `7za.exe` from `tools/tmp/7z2605-extra.7z`
+  (LZMA + BCJ2 as 7-Zip packs its own executables) with the pinned
+  SHA-256. The 7z container exposes it as `Options.Filter = BCJ2` with
+  `Method` LZMA2, LZMA, Copy or `None`.
+- BCJ2 facts observed on both SoTs (2026-11-06, do not re-derive):
+  1. `-m0=BCJ2` alone: one coder `14 03 03 01 1B 04 01` (four
+     in-streams, one out) and four pack streams in the order MAIN, CALL,
+     JUMP, RC; the level does not add a compressor. `-m0=BCJ2 -m1=<M>`:
+     two coders (M, BCJ2), one bond (in-stream 1 from coder 0, the MAIN
+     stream), pack streams in-streams 0, 2, 3, 4 (M packed, CALL, JUMP,
+     RC raw). The module reads both; only the first is written
+     (`Method None`); the second is the `-m` switch line.
+  2. `-mf=BCJ2` (also `-m0=BCJ2 -m1=<M>` with 7-Zip's `-m2=LZMA
+     -m3=LZMA -mb` bonds, and `-mx0`): the shape 7zDec.c accepts: coders
+     LZMA (JUMP), LZMA (CALL), M (MAIN), BCJ2; bonds in-stream 5 from
+     coder 0, 4 from 1, 3 from 2; pack streams in-streams 2, 6, 1, 0, so
+     the stored order is MAIN packed, RC, CALL packed, JUMP packed;
+     unpack sizes JUMP, CALL, MAIN, total. With `-mx0` M is Copy and the
+     side coders stay LZMA.
+  3. The side LZMA coders: dictionary 1 MB reduced like the main coder
+     (`:17` for a 100 KB input, `:20` for the 860 KB binary), lc 0, lp 2,
+     pb 2, fb 128, normal parser, bt4, at every level including `-mx0`
+     (brute-forced over fb 32/64/128/273, fast/normal, bt2..bt5/hc4 and
+     the data-size hint against the SoT's streams; fb 128 + bt4 is the
+     only combination that matched every stream in both lanes). No coder
+     in a BCJ2 folder changes with the data-size hint; the writer does
+     not give one there (`bcj2SideProps`, `encodeBCJ2Folder`).
+  4. The converter is told the file size: a stream of calls whose
+     targets lie 1 MB past a 70 KB input is left unconverted (CALL
+     stream empty); unlimited would convert all of them. In a solid
+     block each file is converted with its own start address
+     (`fileIp64` = its offset in the block) and its own size, and the
+     block is finished at every file boundary (`BCJ2_ENC_FINISH_MODE_
+     END_BLOCK`): a block of three slices of the PE converts differently
+     from the same bytes as one file, and only the per-file setting
+     reproduces both SoTs byte for byte (`bra.Bcj2Encoder.FileSizes`).
+     This is `ICompressGetSubStreamSize` in the LGPL coder, reproduced
+     from the C API's documented block semantics and observation.
+  5. An empty side stream (no jumps in a 2 KB slice of the x64 binary)
+     is still an LZMA stream of 5 zero bytes; `lzma.DecodeOneShot` used
+     to return without consuming them for an empty destination, which
+     the reader took as a data error. It now runs the decoder as
+     `LzmaDec_DecodeToDic` does (consumes the 5 init bytes, status
+     maybe-finished-without-mark).
+  6. BCJ2 alone and BCJ2 + Copy are solid like BCJ (one block for ten
+     1 MB files); BCJ2 + LZMA/LZMA2 keep the coder's solid limit and
+     the dictionary reduction to the total of the data files, including
+     the side coders.
+  7. The module now extracts the SoTs from `7z2605-extra.7z` itself
+     (`CheckExtraPackage`); `tools/fetch-sot.ps1` still uses `7zr.exe`
+     for the extraction so that the pin does not depend on the module.
 
 ## How you fail, and the rule that stops each one
 
@@ -419,7 +485,7 @@ checklist has a public-domain source file:
 |                               | CopyCoder.cpp is LGPL); verified against   |
 |                               | the raw `-m0=Copy` stream of a .7z         |
 | BCJ (x86)                     | `bra/`: ported (`C/Bra86.c`)               |
-| BCJ2                          | `C/Bcj2Enc.c`, `C/Bcj2.c`                  |
+| BCJ2                          | `bra/`: ported (`C/Bcj2Enc.c`, `C/Bcj2.c`) |
 | ARM, ARMT, ARM64              | `C/Bra.c`                                  |
 | PPC, IA64, SPARC, RISCV       | omitted by the user (2026-11-06)           |
 | Delta                         | `C/Delta.c`                                |
@@ -504,7 +570,8 @@ box is ticked only when both lanes are done.
       64 done: `TestEncodeSoTLZMA2/64`
 - [x] BCJ: 32 done: `TestEncodeSoTBCJ/32` (parity key `codec/BCJ`);
       64 done: `TestEncodeSoTBCJ/64`
-- [ ] BCJ2: 32 not done; 64 not done
+- [x] BCJ2: 32 done: `TestEncodeSoTBCJ2/32` (parity key `codec/BCJ2`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTBCJ2/64`
 - [ ] ARM: 32 not done; 64 not done
 - [ ] ARMT: 32 not done; 64 not done
 - [ ] ARM64: 32 not done; 64 not done
@@ -536,9 +603,9 @@ box is ticked only when both lanes are done.
 - [ ] `-mf=on` (default): executable detection by extension and by content
       (PE, ELF, Mach-O headers), filter choice per file, BCJ2 at the levels
       7-Zip uses it, `-myx` analysis level: 32 not done; 64 not done
-- [ ] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ works on
-      the 32-bit lane as `Options.Filter`; the line needs every filter):
-      32 not done; 64 not done
+- [ ] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ and BCJ2
+      work in both lanes as `Options.Filter`; the line needs every
+      filter): 32 not done; 64 not done
 - [ ] `-myv`, `-myfa`, `-myfd`: 32 not done; 64 not done
 
 ### Formats (`7za i`, `-t`)
@@ -626,7 +693,7 @@ with their source situation.
 Top to bottom. No reordering by what seems important. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is BCJ2, then down the list, each line in both
+lines after them. Next is ARM, then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit
 per line. Never spend a session on anything that marks no line.
