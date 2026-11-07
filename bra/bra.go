@@ -156,3 +156,89 @@ func (x *convReader) Read(p []byte) (int, error) {
 	x.out += m
 	return m, nil
 }
+
+// ARMTConvert is z7_BranchConv_ARMT (Bra.c): Thumb BL instruction
+// pairs (first halfword 0xF000..0xF7FF, second 0xF800..0xFFFF),
+// little-endian, alignment 2, look-ahead 2: the last halfword is left
+// for the next call. pc is the virtual address of data[0].
+func ARMTConvert(data []byte, pc uint32, encoding bool) int {
+	size := len(data) &^ 1
+	if size <= 2 {
+		return 0
+	}
+	size -= 2
+	lim := size
+	// BR_PC_INIT; pc += 4 - 4: in Thumb the branch offset is relative to
+	// +2 instructions (4 bytes) from the current one, and p points there
+	// once both halfwords are consumed.
+	p := 0
+	for {
+		b1 := uint32(data[p+1])
+		for {
+			if p >= lim {
+				return p
+			}
+			b3 := uint32(data[p+3])
+			p += 2
+			if (b3 & (b1 ^ 8)) >= 0xf8 {
+				break
+			}
+			if p >= lim {
+				return p
+			}
+			b1 = uint32(data[p+3])
+			p += 2
+			if (b1 & (b3 ^ 8)) >= 0xf8 {
+				break
+			}
+		}
+		v := uint32(binary.LittleEndian.Uint16(data[p-2:]))<<11 |
+			uint32(binary.LittleEndian.Uint16(data[p:]))&0x7FF
+		p += 2
+		c := (pc + uint32(p)) >> 1
+		if encoding {
+			v += c
+		} else {
+			v -= c
+		}
+		binary.LittleEndian.PutUint16(data[p-4:], uint16(((v>>11)&0x7ff)|0xf000))
+		binary.LittleEndian.PutUint16(data[p-2:], uint16(v|0xf800))
+		if p >= lim {
+			return p
+		}
+	}
+}
+
+// ARMTEncode converts a whole buffer in place as the 7z ARMT encoder
+// does (pc 0).
+func ARMTEncode(data []byte) { ARMTConvert(data, 0, true) }
+
+// ARMTDecode is the inverse of ARMTEncode in place (7zDec.c applies
+// z7_BranchConv_ARMT_Dec to the whole unpacked folder with pc 0).
+func ARMTDecode(data []byte) { ARMTConvert(data, 0, false) }
+
+// ARMTEncodeBytes returns a converted copy of data.
+func ARMTEncodeBytes(data []byte) []byte {
+	out := append([]byte(nil), data...)
+	ARMTEncode(out)
+	return out
+}
+
+// ARMTDecodeBytes returns a decoded copy of data.
+func ARMTDecodeBytes(data []byte) []byte {
+	out := append([]byte(nil), data...)
+	ARMTDecode(out)
+	return out
+}
+
+// NewARMTEncodeReader returns a reader that yields r's bytes converted
+// by the ARMT encoder, chunk by chunk.
+func NewARMTEncodeReader(r io.Reader) io.Reader {
+	return newConvReader(r, func(data []byte, pc uint32) int { return ARMTConvert(data, pc, true) })
+}
+
+// NewARMTDecodeReader returns a reader that yields r's bytes converted
+// by the ARMT decoder.
+func NewARMTDecodeReader(r io.Reader) io.Reader {
+	return newConvReader(r, func(data []byte, pc uint32) int { return ARMTConvert(data, pc, false) })
+}

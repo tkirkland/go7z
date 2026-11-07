@@ -23,3 +23,15 @@ func TestEncodeSoTARM(t *testing.T) {
 		})
 	}
 }
+
+// TestEncodeSoTARMT is the same proof for the ARMT (Thumb) converter
+// (-m0=ARMT); the matrix is the parity check for codec/ARMT.
+func TestEncodeSoTARMT(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunARMTMatrix(t, root, lane)
+		})
+	}
+}

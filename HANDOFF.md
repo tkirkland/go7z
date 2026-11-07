@@ -130,7 +130,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    mark is `blocked: LGPL-only source` until the user says what to do
    about that, and that mark is reported as such, never as done.
 
-## Session state (2026-11-07, after the ARM session)
+## Session state (2026-11-07, after the ARMT session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -157,7 +157,7 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. The six LGPL-only lines are
   in `parity.Blocked` and fail with that reason. Current baseline:
-  **32-bit lane 7 of 92; 64-bit lane 7 of 92** (both against `7za`,
+  **32-bit lane 8 of 92; 64-bit lane 8 of 92** (both against `7za`,
   large inputs included). A full run takes about 14 minutes for the
   small matrices plus the large cases (below).
 - `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
@@ -171,8 +171,9 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `bra/`, container bonds), `c25250f`..`cb927d3` (two-lane harness,
   fixtures, docs), `d503515` (BCJ2: `bra/bcj2.go`, generic folder
   decoder, BCJ2 folders in the writer), `ca0a2c3` (docs), `c2536ee`
-  (ARM: `bra/bra.go`, `Options.Filter = ARM`), then this handoff
-  revision.
+  (ARM: `bra/bra.go`, `Options.Filter = ARM`), `5d01c8d` (docs), the
+  ARMT commit (`ARMTConvert` in `bra/bra.go`, `Options.Filter = ARMT`),
+  then this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -195,8 +196,9 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   and raw pack streams through the module's header parser:
   `Archive.FolderCoders`, `FolderPackStreams`, `FolderUnpackSizes`),
   `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`, `RunCopyMatrix`,
-  `RunBCJMatrix`, `RunBCJ2Matrix`, `RunARMMatrix` (`CheckRisc` with a
-  `RiscCheck` per RISC converter, `ARMPattern`), `SevenZCases(exe)`,
+  `RunBCJMatrix`, `RunBCJ2Matrix`, `RunARMMatrix`, `RunARMTMatrix`
+  (`CheckRisc` with a `RiscCheck` per RISC converter, `ARMPattern`,
+  `ARMTPattern`), `SevenZCases(exe)`,
   `RunSevenZMatrix`, `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
   it; the `Test...SoT...` tests in `lzma/`, `copycoder/`, `bra/` and
   `sevenzip/` run each matrix once per lane as subtests `32` and `64`.
@@ -251,12 +253,12 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
   no public-domain writer source. Both sides handle two-coder folders
   (method + filter, one bond). `number.go` has the variable-length number
-  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 141 cases
+  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 161 cases
   byte-identical to both SoTs' archives (Copy, LZMA, LZMA2 at
   levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and directories,
   nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`, `-mtc=on`,
   `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases, 32 BCJ2 cases,
-  20 ARM cases) plus
+  20 ARM cases, 20 ARMT cases) plus
   the large cases, and the module reads every SoT archive back (names,
   sizes, CRCs, contents). The reader's `decodeFolder` walks the coder
   graph generically (the main coder's in-streams are pack streams or
@@ -351,8 +353,21 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `SevenZCases`. Observed on both SoTs: ARM uses pc 0 and no
   properties, converts whole-stream (chunk-independent), and leaves
   the last `size mod 4` bytes unconverted; ARM alone and ARM + Copy are
-  solid like BCJ. The ARMT, ARM64 and other `Bra.c` converters are not
-  ported yet; add them to `bra/bra.go` with a `RiscCheck` each. File
+  solid like BCJ.
+- `bra/bra.go` (codec/ARMT): port of `Bra.c`'s `BranchConv_ARMT`
+  (`ARMTConvert`, alignment 2, look-ahead 2: the last halfword is left
+  for the next chunk; `ARMTEncode`/`ARMTDecode`, `...Bytes`,
+  `NewARMTEncodeReader`/`NewARMTDecodeReader`). Proof:
+  `TestEncodeSoTARMT` / parity `codec/ARMT`, 48 cases per lane
+  byte-identical to the SoT's `-m0=ARMT` packed stream (the SoT
+  binary, slices, deterministic data at 0..3 MB including every size
+  0..9, Thumb BL pair patterns at even and odd shifts, lone F0/F8
+  halfwords, 22-bit wrap, a pair at the very end, a cut pair),
+  whole-buffer and streaming, and the SoT's streams decode back.
+  `Options.Filter = ARMT`, 20 container cases. Observed on both SoTs:
+  pc 0, no properties, chunk-independent, the last halfword (and an
+  odd byte) unconverted. ARM64 and the other `Bra.c` converters are
+  not ported yet; add them to `bra/bra.go` with a `RiscCheck` each. File
   names: never end a Go file in `_arm.go`, `_arm_test.go`, `_arm64.go`
   or `_arm64_test.go`; Go reads the suffix as a GOARCH constraint and
   silently drops the file on x86 (the parity line is
@@ -512,8 +527,8 @@ checklist has a public-domain source file:
 |                               | the raw `-m0=Copy` stream of a .7z         |
 | BCJ (x86)                     | `bra/`: ported (`C/Bra86.c`)               |
 | BCJ2                          | `bra/`: ported (`C/Bcj2Enc.c`, `C/Bcj2.c`) |
-| ARM                           | `bra/`: ported (`C/Bra.c`)                 |
-| ARMT, ARM64                   | `C/Bra.c`                                  |
+| ARM, ARMT                     | `bra/`: ported (`C/Bra.c`)                 |
+| ARM64                         | `C/Bra.c`                                  |
 | PPC, IA64, SPARC, RISCV       | omitted by the user (2026-11-06)           |
 | Delta                         | `C/Delta.c`                                |
 | Swap2, Swap4                  | trivial byte swap (no SDK file;            |
@@ -601,7 +616,8 @@ box is ticked only when both lanes are done.
       container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTBCJ2/64`
 - [x] ARM: 32 done: `TestEncodeSoTARM/32` (parity key `codec/ARM`;
       container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTARM/64`
-- [ ] ARMT: 32 not done; 64 not done
+- [x] ARMT: 32 done: `TestEncodeSoTARMT/32` (parity key `codec/ARMT`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTARMT/64`
 - [ ] ARM64: 32 not done; 64 not done
 - PPC, IA64, SPARC, RISCV: omitted by the user on 2026-11-06 ("omit
   ppc, ia64, sparc, riscv"). Not counted in either lane; TestParity
@@ -631,9 +647,9 @@ box is ticked only when both lanes are done.
 - [ ] `-mf=on` (default): executable detection by extension and by content
       (PE, ELF, Mach-O headers), filter choice per file, BCJ2 at the levels
       7-Zip uses it, `-myx` analysis level: 32 not done; 64 not done
-- [ ] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ, BCJ2
-      and ARM work in both lanes as `Options.Filter`; the line needs
-      every filter): 32 not done; 64 not done
+- [ ] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ, BCJ2,
+      ARM and ARMT work in both lanes as `Options.Filter`; the line
+      needs every filter): 32 not done; 64 not done
 - [ ] `-myv`, `-myfa`, `-myfd`: 32 not done; 64 not done
 
 ### Formats (`7za i`, `-t`)
@@ -721,7 +737,7 @@ with their source situation.
 Top to bottom. No reordering by what seems important. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is ARMT, then down the list, each line in both
+lines after them. Next is ARM64, then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit
 per line. Never spend a session on anything that marks no line.
