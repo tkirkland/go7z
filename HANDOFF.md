@@ -11,7 +11,8 @@ deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
 work into two lanes, by the Claude Fable 5.1 session of 2026-11-06
 that built the two-lane harness, by the Claude Fable 5.1 session of
 2026-11-06 that ported BCJ2, and by the Claude Fable 5.1 session of
-2026-11-07 that ported ARM64, Swap2, Swap4, Delta and 7zAES. Each update
+2026-11-07 that ported ARM64, Swap2, Swap4, Delta, 7zAES, PPMd and the
+hashers. Each update
 integrates what that
 session actually produced, and what the user established about why
 hand offs keep failing.
@@ -132,7 +133,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    mark is `blocked: LGPL-only source` until the user says what to do
    about that, and that mark is reported as such, never as done.
 
-## Session state (2026-11-07, after the ARM64, Swap, Delta and 7zAES session)
+## Session state (2026-11-07, after the ARM64 .. hashers session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -179,7 +180,9 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   ARM64`), the Swap commit (`bra/swap.go`, `Options.Filter = Swap2`,
   `Swap4`) and the Delta commit (`bra/delta.go`, `Options.Filter =
   Delta`, `Options.DeltaDistance`) and the 7zAES commit (`sevenzip/aes.go`,
-  `Options.Password`, `EncryptHeader`, `Random`, `OpenWithPassword`), then
+  `Options.Password`, `EncryptHeader`, `Random`, `OpenWithPassword`), the
+  PPMd commit (`ppmd/`, `sevenzip/ppmd.go`, `Options.Method = PPMd`,
+  `PPMdOrder`, `PPMdMem`), the hasher commit (`hasher/`), then
   this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
@@ -205,7 +208,8 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`, `RunCopyMatrix`,
   `RunBCJMatrix`, `RunBCJ2Matrix`, `RunARMMatrix`, `RunARMTMatrix`,
   `RunARM64Matrix`, `RunSwapMatrix` (`Swap2Check`, `Swap4Check`),
-  `RunDeltaMatrix` (`DeltaCheck(delta)`), `AESCases`, `RunAESMatrix`
+  `RunDeltaMatrix` (`DeltaCheck(delta)`), `AESCases`, `RunAESMatrix`,
+  `RunPPMDMatrix` (`CheckPPMD`), `RunHashMatrix` (`HashCases`, `CheckHash`)
   (`CheckRisc` with a `RiscCheck` per RISC converter, `ARMPattern`,
   `ARMTPattern`, `ARM64Pattern`), `SevenZCases(exe)`,
   `RunSevenZMatrix`, `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
@@ -262,13 +266,13 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
   no public-domain writer source. Both sides handle two-coder folders
   (method + filter, one bond). `number.go` has the variable-length number
-  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 271 cases
+  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 327 cases
   byte-identical to both SoTs' archives (Copy, LZMA, LZMA2 at
   levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and directories,
   nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`, `-mtc=on`,
   `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases, 32 BCJ2 cases,
   20 ARM cases, 20 ARMT cases, 20 ARM64 cases, 20 Swap2 cases, 20 Swap4
-  cases, 25 Delta cases) plus
+  cases, 25 Delta cases, 28 PPMd cases) plus
   the large cases, and the module reads every SoT archive back (names,
   sizes, CRCs, contents). The reader's `decodeFolder` walks the coder
   graph generically (the main coder's in-streams are pack streams or
@@ -469,7 +473,76 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   with one item and trees, four passwords including non-ASCII and over
   64 bytes): with the SoT's IVs read from its archive and injected
   through `Options.Random` the module's archive is byte-identical, the
-  SoT tests the module's archive with the password and rejects a wrong
+  derivation (0.3 s) is cached per password.
+- `ppmd/` (codec/PPMD): port of `Ppmd7.c`, `Ppmd7Enc.c`, `Ppmd7Dec.c`
+  (`Model` over a byte arena addressed by uint32 offsets with every
+  field read at the C struct's byte offset, so the one-state and
+  free-node aliasing works as in C; `Encoder`/`EncodeBytes`,
+  `DecodeBytes` with 7zDec.c's finish checks). Proof: `TestEncodeSoTPPMD`
+  / parity `codec/PPMD`, 46 cases per lane byte-identical to the SoT's
+  `-m0=PPMd` packed stream (levels 0..9 on a 300 KB binary and 100 KB
+  text, sizes 1..1048577 around the memory-reduction boundaries, the
+  full SoT binary, 1 MB text at mx7, 3 MB at mx9, constant inputs,
+  explicit o=2/3/16/32 and mem=64k/96k/2m/1g), the SoT's streams
+  decoded, and 28 container cases (`Options.Method = PPMd`, `PPMdOrder`,
+  `PPMdMem`; trees solid, non-solid, -ms=150k, four 5..7 MB files at
+  mem=64k for the solid limit, PPMd behind BCJ, BCJ2 and Delta).
+  Observed on both SoTs (2026-11-07, do not re-derive): coder record
+  `23 03 04 01 05 <order> <mem LE32>`; level 0..9 gives order 3, 4, 4,
+  5, 5, 6, 8, 16, 24, 32 and memory 2^(19+level); `o=1`, `o=33`,
+  `mem=65535`, `mem=1000000`, `mem=4g` are rejected; memory reduction
+  for a data size n: the smallest m = 2^i (i >= 16) with n <= m/16,
+  memory = min(mem, m) (4096 -> 2^16, 4097 -> 2^17, 131072 -> 2^21,
+  131073 -> 2^22, 1048576 -> 2^24, 1048577 -> 2^25; n is the solid
+  total or the largest file as for LZMA); solid limit max(mem << 7,
+  16 MB) (40 x 1 MB: 3 blocks at mem=64k, 2 at 256k, 1 from 1m); the
+  stream has no end marker, 7zDec.c requires Code == 0 after the last
+  symbol; `-mmt` does not change the output; an empty file has no
+  stream; "ab" encodes to `00 61 03 08 bb a4 00`.
+- `hasher/` (hasher/CRC32, CRC64, SHA256, SHA1, XXH64): CRC32, CRC64 (ECMA,
+  the XZ polynomial), SHA-1 and SHA-256 from the standard library, XXH64
+  ported from `Xxh64.c` (BSD 2-Clause, seed 0; `hasher/xxh64.go`); the
+  report of `7za h` reproduced from observation (`Scan`, `Render`;
+  HashCalc.cpp is LGPL and not ported). Proof: `TestSoTHash` / parity
+  `hasher/<Name>`, 21 report cases per -scrc form per lane (single
+  files, empty file, the SoT binary, two files in both argument orders,
+  a tree with nested and empty directories, names that sort by upper
+  case, non-ASCII names, sizes at the KiB/MiB rounding boundaries,
+  directory arguments with and without a trailing separator) equal to
+  the SoT's stdout from the Scanning line on, with `-sccUTF-8` so names
+  are UTF-8. Observed on both SoTs (2026-11-07, do not re-derive):
+  1. Per-file digests: CRC32/CRC64/XXH64 printed as the value in upper
+     hex, SHA1/SHA256 as lower hex bytes. The digest bytes 7-Zip sums
+     are the little-endian value for the CRCs and XXH64.
+  2. "for data" = the file digests added as little-endian integers;
+     "-XXXXXXXX" (the carry count, hex) is appended when the number of
+     files is not 1 (so also for 0 files). The table's total row is the
+     same value.
+  3. "for data and names" = the sum over files and directories of
+     H(16 bytes: 1 then zeros for a directory, all zeros for a file ||
+     data digest (zeros for a directory) || path in UTF-16LE with "/"
+     separators and no trailing separator); the count is appended when
+     files + directories is not 1; the line is omitted for exactly one
+     file and no directory.
+  4. Scan order: arguments in order; a directory is listed with a
+     trailing backslash, then its entries depth first, each directory
+     sorted by ordinal comparison of the upper-cased names (1, 10, 2, a,
+     "a b", a-1, a.1, a1, ab, a_1, b, Z, [x, ~y). Paths are printed as
+     given with backslashes.
+  5. Scan line: "N folders, " if any, "N file(s), N bytes", then
+     " (N KiB)" rounded up below 10 MiB, MiB below 10 GiB, GiB above,
+     omitted for 0 bytes. Table columns: digest width, space, size in
+     13, two spaces, name; directory rows blank. After the table:
+     "Folders: N" if any, "Files: N" unless exactly 1, "Size: N", then
+     per algorithm a blank line, "NAME   for data:" padded to column
+     30 and the value(s); then "Everything is Ok".
+  6. `-scrc` names are case-insensitive; `-scrc*` prints all five
+     columns in the order CRC32, CRC64, SHA256, SHA1, XXH64;
+     `-scrcCRC32,SHA256` is "Not implemented"; without `-sccUTF-8` a
+     non-ASCII name is printed in the console code page.
+  Not covered (the `h` command and switch lines): -r, wildcards, -i/-x,
+  absolute paths (printed as the file name only), -ba, -bb, hashing of
+  stdin, error paths.
   one, and the module extracts the SoT's (`OpenWithPassword`,
   `SetPassword`, `HeaderCoders`; `ErrPassword` without one). The key
   derivation (0.3 s) is cached per password.
@@ -744,7 +817,8 @@ box is ticked only when both lanes are done.
       the zip format line. Needs the user's ruling. Former text:
       (`-m0=AES256CBC` as a coder; same cipher as 7zAES
       without key derivation): 32 not done; 64 not done
-- [ ] PPMD (`C/Ppmd7.c`, `C/Ppmd7Enc.c`): 32 not done; 64 not done
+- [x] PPMD: 32 done: `TestEncodeSoTPPMD/32` (parity key `codec/PPMD`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTPPMD/64`
 - [ ] Deflate: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
 - [ ] Deflate64: 32 blocked: LGPL-only source; 64 blocked: LGPL-only
       source
@@ -752,11 +826,16 @@ box is ticked only when both lanes are done.
 
 ### Hashers (`7za i`)
 
-- [ ] CRC32: 32 not done; 64 not done
-- [ ] CRC64: 32 not done; 64 not done
-- [ ] SHA256: 32 not done; 64 not done
-- [ ] SHA1 (`C/Sha1.c`): 32 not done; 64 not done
-- [ ] XXH64 (`C/Xxh64.c`): 32 not done; 64 not done
+- [x] CRC32: 32 done: `TestSoTHash/32` (parity key `hasher/CRC32`); 64 done:
+      `TestSoTHash/64`
+- [x] CRC64: 32 done: `TestSoTHash/32` (parity key `hasher/CRC64`); 64 done:
+      `TestSoTHash/64`
+- [x] SHA256: 32 done: `TestSoTHash/32` (parity key `hasher/SHA256`); 64
+      done: `TestSoTHash/64`
+- [x] SHA1: 32 done: `TestSoTHash/32` (parity key `hasher/SHA1`); 64 done:
+      `TestSoTHash/64`
+- [x] XXH64: 32 done: `TestSoTHash/32` (parity key `hasher/XXH64`); 64 done:
+      `TestSoTHash/64`
 
 ### Filter automation (what `-mf` does by default)
 
@@ -853,7 +932,7 @@ with their source situation.
 Top to bottom. No reordering by what seems important. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is PPMD (AES256CBC awaits the user's ruling, see its
+lines after them. Next is the filter automation, `-mf=on` (AES256CBC awaits the user's ruling, see its
 line), then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit

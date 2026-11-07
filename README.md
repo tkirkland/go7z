@@ -1,7 +1,8 @@
 # go7z
 
 A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2, ARM, ARMT,
-ARM64, Swap2, Swap4 and Delta filters, 7zAES encryption and the 7z container,
+ARM64, Swap2, Swap4 and Delta filters, PPMd, 7zAES encryption and the 7z
+container,
 written to be
 byte-identical to
 7-Zip itself.
@@ -21,7 +22,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 13 of 92; 64-bit lane 13 of 92**. Six lines (Deflate,
+**32-bit lane 19 of 92; 64-bit lane 19 of 92**. Six lines (Deflate,
 Deflate64, BZip2, Cab, gzip, bzip2) have no public-domain source and
 are counted as blocked.
 
@@ -39,9 +40,15 @@ are counted as blocked.
 | codec/Swap4       | `bra`: four-byte reverse, 32 cases identical             |
 | codec/Delta       | `bra`: Delta filter, 194 cases identical                 |
 | codec/7zAES       | `sevenzip`: 49 archives identical given the SoT's IVs    |
-| format/7z         | `sevenzip`: 271 archives identical, all read back        |
+| codec/PPMD        | `ppmd`: encoder and decoder, 46 cases identical          |
+| hasher/CRC32      | `hasher`: h report identical, 21 cases x 3 forms         |
+| hasher/CRC64      | `hasher`: h report identical, 21 cases                   |
+| hasher/SHA256     | `hasher`: h report identical, 21 cases                   |
+| hasher/SHA1       | `hasher`: h report identical, 21 cases                   |
+| hasher/XXH64      | `hasher`: h report identical, 21 cases                   |
+| format/7z         | `sevenzip`: 327 archives identical, all read back        |
 
-Everything else (AES256CBC, PPMD, the hashers, xz/lzma formats, the CLI
+Everything else (AES256CBC, the filter automation, xz/lzma formats, the CLI
 commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
@@ -51,6 +58,10 @@ for the full checklist and the order of work.
   public-domain LZMA SDK sources in 7-Zip 26.05 (`LzmaEnc.c`, `LzFind.c`,
   `Lzma2Enc.c`, `LzmaDec.c`, `Lzma2Dec.c`).
 - `copycoder`: the Copy (store) coder.
+- `hasher`: the CRC32, CRC64, SHA256, SHA1 and XXH64 hashers, the digest
+  sums and the text of the `h` report.
+- `ppmd`: the PPMd var.H (Ppmd7z) encoder and decoder, ported from
+  `Ppmd7.c`, `Ppmd7Enc.c` and `Ppmd7Dec.c`.
 - `bra`: the branch converters: BCJ (x86), ported from `Bra86.c`, and
   ARM, ARMT and ARM64, ported from `Bra.c`, and the Swap2 and Swap4 byte
   swaps (observed, no public-domain source) and Delta (ported from
