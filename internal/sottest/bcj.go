@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"bytes"
@@ -7,15 +7,15 @@ import (
 	"testing"
 
 	"github.com/tkirkland/go7z/bra"
-	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/sot"
 )
 
-// OracleExe returns the bytes of the pinned oracle binary itself: a real
+// SoTExe returns the bytes of the pinned SoT binary itself: a real
 // x86 PE image, used as filter input so that the branch converters see
 // genuine CALL/JMP instructions and not only random bytes.
-func OracleExe(t testing.TB, root string) []byte {
+func SoTExe(t testing.TB, root string) []byte {
 	t.Helper()
-	bin, err := oracle.Binary(root)
+	bin, err := sot.Binary(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +44,9 @@ func BranchPattern(n int, seed uint32) []byte {
 }
 
 // CheckBCJ encodes input with the module's x86 converter and compares it
-// with the raw stream the oracle writes into a .7z for -m0=BCJ (the
+// with the raw stream the SoT writes into a .7z for -m0=BCJ (the
 // folder's only coder is BCJ, so the packed stream is the filter
-// output); then it decodes the oracle's stream back to the input, with
+// output); then it decodes the SoT's stream back to the input, with
 // the whole-buffer functions and with the streaming readers.
 func CheckBCJ(t *testing.T, root, dir string, input []byte, args ...string) {
 	t.Helper()
@@ -54,17 +54,17 @@ func CheckBCJ(t *testing.T, root, dir string, input []byte, args ...string) {
 	want := SevenZRawStream(t, root, dir, input, full...)
 	got := bra.X86EncodeBytes(input)
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("%v: BCJ stream differs from oracle: got %d bytes, want %d, first difference at %d", full, len(got), len(want), i)
+		t.Fatalf("%v: BCJ stream differs from SoT: got %d bytes, want %d, first difference at %d", full, len(got), len(want), i)
 	}
 	if dec := bra.X86DecodeBytes(want); !bytes.Equal(dec, input) {
-		t.Fatalf("%v: decoding the oracle's stream does not give the input (%d bytes)", full, len(dec))
+		t.Fatalf("%v: decoding the SoT's stream does not give the input (%d bytes)", full, len(dec))
 	}
 	var sb bytes.Buffer
 	if _, err := sb.ReadFrom(bra.NewX86EncodeReader(&oddReader{r: bytes.NewReader(input)})); err != nil {
 		t.Fatal(err)
 	}
 	if i := FirstDifference(sb.Bytes(), want); i >= 0 {
-		t.Fatalf("%v: streaming BCJ encoder differs from oracle at %d", full, i)
+		t.Fatalf("%v: streaming BCJ encoder differs from SoT at %d", full, i)
 	}
 	sb.Reset()
 	if _, err := sb.ReadFrom(bra.NewX86DecodeReader(&oddReader{r: bytes.NewReader(want)})); err != nil {
@@ -93,7 +93,7 @@ func (o *oddReader) Read(p []byte) (int, error) {
 }
 
 // RunBCJMatrix runs every BCJ comparison as parallel subtests: the
-// oracle binary (a real PE), deterministic binary and text-like inputs
+// SoT binary (a real PE), deterministic binary and text-like inputs
 // across the filter coder's buffer boundaries, branch-opcode patterns,
 // and the sizes where the converter has nothing to do (0..5 bytes).
 func RunBCJMatrix(t *testing.T, root string) {
@@ -103,7 +103,7 @@ func RunBCJMatrix(t *testing.T, root string) {
 		args  []string
 	}
 	var cases []c
-	exe := OracleExe(t, root)
+	exe := SoTExe(t, root)
 	cases = append(cases, c{"exe", exe, nil})
 	cases = append(cases, c{"exe_mx1", exe, []string{"-mx=1"}})
 	cases = append(cases, c{"exe_mx9", exe, []string{"-mx=9"}})

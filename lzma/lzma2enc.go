@@ -5,7 +5,7 @@ package lzma
 // (MtCoder) encodes independent blocks whose outputs are concatenated in
 // order; here the same blocks are encoded sequentially with the same
 // per-block setup (direct input, expected size = block size), so the bytes
-// are identical to the multithreaded oracle's.
+// are identical to the multithreaded SoT's.
 
 import "io"
 
@@ -482,7 +482,7 @@ func (p *Lzma2Encoder) encodeMt1(c *lzma2EncInt, outStream io.Writer, outBuf []b
 // Encode is Lzma2Enc_Encode2 for the stream/stream case: it encodes
 // everything from in to out, including the LZMA2 end marker. With more
 // than one block thread configured, the input is split into BlockSize
-// blocks encoded independently (as the oracle's MtCoder does) and
+// blocks encoded independently (as the SoT's MtCoder does) and
 // concatenated in order.
 func (p *Lzma2Encoder) Encode(out io.Writer, in io.Reader) error {
 	for i := range p.coders {

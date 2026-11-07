@@ -1,4 +1,4 @@
-//go:build oracle
+//go:build sot
 
 package sevenzip_test
 
@@ -10,21 +10,21 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tkirkland/go7z/internal/oracle"
-	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/sot"
+	"github.com/tkirkland/go7z/internal/sottest"
 	"github.com/tkirkland/go7z/lzma"
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
-// oracleHeaders writes a multi-item archive with the oracle twice, with
+// sotHeaders writes a multi-item archive with the SoT twice, with
 // and without header compression, and returns the raw header and the
 // packed header bytes.
-func oracleHeaders(t *testing.T, root, dir string, files []oracletest.TreeFile, inputs []string) (raw, packed []byte) {
+func sotHeaders(t *testing.T, root, dir string, files []sottest.TreeFile, inputs []string) (raw, packed []byte) {
 	t.Helper()
 	tree := filepath.Join(dir, "tree")
 	os.MkdirAll(tree, 0o755)
-	oracletest.MakeTree(t, tree, files)
-	bin, err := oracle.Binary(root)
+	sottest.MakeTree(t, tree, files)
+	bin, err := sot.Binary(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,8 @@ func oracleHeaders(t *testing.T, root, dir string, files []oracletest.TreeFile, 
 		args := append([]string{"a", "-t7z"}, extra...)
 		args = append(args, filepath.Join(dir, name))
 		args = append(args, inputs...)
-		if out, err := oracle.RunBinary(bin, tree, args...); err != nil {
-			t.Fatalf("oracle: %v\n%s", err, out)
+		if out, err := sot.RunBinary(bin, tree, args...); err != nil {
+			t.Fatalf("SoT: %v\n%s", err, out)
 		}
 		b, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
@@ -51,7 +51,7 @@ func oracleHeaders(t *testing.T, root, dir string, files []oracletest.TreeFile, 
 	size = binary.LittleEndian.Uint64(comp[20:])
 	info := comp[32+off : 32+off+size]
 	if info[0] != 0x17 {
-		t.Fatalf("oracle did not compress the header: % x", info)
+		t.Fatalf("SoT did not compress the header: % x", info)
 	}
 	// 17 06 <packPos> 01 09 <packedSize> ...
 	rd := bytes.NewReader(info[2:])
@@ -100,26 +100,26 @@ func readNum(t *testing.T, r *bytes.Reader) uint64 {
 	return v
 }
 
-// TestHeaderEncoderParams pins the LZMA parameters of the oracle's
-// header coder: the parameters in use must reproduce the oracle's
+// TestHeaderEncoderParams pins the LZMA parameters of the SoT's
+// header coder: the parameters in use must reproduce the SoT's
 // packed header byte for byte on several headers. On failure it
 // searches the parameter space and reports every match.
 func TestHeaderEncoderParams(t *testing.T) {
-	root := oracletest.RepoRoot(t)
-	mixed := []oracletest.TreeFile{
-		{Name: "in/a.txt", Data: oracletest.TextLike(85)},
-		{Name: "in/b.bin", Data: oracletest.DeterministicData(4096)},
+	root := sottest.RepoRoot(t)
+	mixed := []sottest.TreeFile{
+		{Name: "in/a.txt", Data: sottest.TextLike(85)},
+		{Name: "in/b.bin", Data: sottest.DeterministicData(4096)},
 		{Name: "in/empty.txt"},
-		{Name: "in/dir/c.txt", Data: oracletest.TextLike(12)},
+		{Name: "in/dir/c.txt", Data: sottest.TextLike(12)},
 		{Name: "in/emptydir/"},
 	}
-	var many []oracletest.TreeFile
+	var many []sottest.TreeFile
 	for i := 0; i < 4000; i++ {
-		many = append(many, oracletest.TreeFile{Name: fmt.Sprintf("many/d%d/e%d/f%04d_%s.bin", i%13, (i*7)%5, i, nameWord(i)), Data: oracletest.DeterministicData(10 + i%200)})
+		many = append(many, sottest.TreeFile{Name: fmt.Sprintf("many/d%d/e%d/f%04d_%s.bin", i%13, (i*7)%5, i, nameWord(i)), Data: sottest.DeterministicData(10 + i%200)})
 	}
 	type hc struct {
 		name   string
-		files  []oracletest.TreeFile
+		files  []sottest.TreeFile
 		inputs []string
 		raw    []byte
 		packed []byte
@@ -129,7 +129,7 @@ func TestHeaderEncoderParams(t *testing.T) {
 		{name: "many", files: many, inputs: []string{"many"}},
 	}
 	for i := range headers {
-		headers[i].raw, headers[i].packed = oracleHeaders(t, root, t.TempDir(), headers[i].files, headers[i].inputs)
+		headers[i].raw, headers[i].packed = sotHeaders(t, root, t.TempDir(), headers[i].files, headers[i].inputs)
 	}
 	props, sds := sevenzip.HeaderEncProps()
 	ok := true

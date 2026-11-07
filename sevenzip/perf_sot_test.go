@@ -1,4 +1,4 @@
-//go:build oracle
+//go:build sot
 
 package sevenzip_test
 
@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tkirkland/go7z/internal/oracle"
-	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/sot"
+	"github.com/tkirkland/go7z/internal/sottest"
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
-// TestPerfVsOracle times the module's writer against 7zr on the same
+// TestPerfVsSoT times the module's writer against 7zr on the same
 // input and prints both. It is a measurement, not a check.
-func TestPerfVsOracle(t *testing.T) {
-	root := oracletest.RepoRoot(t)
-	bin, err := oracle.Binary(root)
+func TestPerfVsSoT(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	bin, err := sot.Binary(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestPerfVsOracle(t *testing.T) {
 			args := append([]string{"a", "-t7z"}, c.args...)
 			args = append(args, filepath.Join(dir, "o.7z"), "in.bin")
 			t0 := time.Now()
-			if out, err := oracle.RunBinary(bin, dir, args...); err != nil {
+			if out, err := sot.RunBinary(bin, dir, args...); err != nil {
 				t.Fatalf("%v: %v\n%s", args, err, out)
 			}
 			d7 := time.Since(t0)

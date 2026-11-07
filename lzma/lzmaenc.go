@@ -3,12 +3,12 @@ package lzma
 // Port of reference/7zip/C/LzmaEnc.c (26.05, public domain): the LZMA
 // encoder (range coder, price tables, optimal and fast parsers, block
 // coding). The port is literal so that the packed bytes are identical to
-// the oracle's for the same input and properties.
+// the SoT's for the same input and properties.
 //
-// The oracle is the 32-bit 7zr build. The two places where the C code
+// The SoT is the 32-bit 7zr build. The two places where the C code
 // depends on sizeof(size_t) — the default dictionary size per level and
 // kNumLogBits (hence the largest accepted dictionary) — follow the 32-bit
-// value, oracleSizeT.
+// value, sotSizeT.
 
 import (
 	"errors"
@@ -26,8 +26,8 @@ var (
 	ErrFail = errors.New("lzma: encoder failure")
 )
 
-// oracleSizeT is sizeof(size_t) of the pinned oracle build (x86).
-const oracleSizeT = 4
+// sotSizeT is sizeof(size_t) of the pinned SoT build (x86).
+const sotSizeT = 4
 
 const (
 	kLzmaMaxHistorySize = uint32(15) << 28
@@ -37,7 +37,7 @@ const (
 	kNumBitPriceShiftBits = 4
 	repLenCount           = 64
 
-	kNumLogBits            = 11 + oracleSizeT/8*3
+	kNumLogBits            = 11 + sotSizeT/8*3
 	kDicLogSizeMaxCompress = (kNumLogBits-1)*2 + 7
 
 	lzmaNumReps = 4
@@ -135,10 +135,10 @@ func (p *EncProps) Normalize() {
 		switch {
 		case uint(level) <= 4:
 			p.DictSize = uint32(1) << (uint(level)*2 + 16)
-		case uint(level) <= oracleSizeT/2+4:
+		case uint(level) <= sotSizeT/2+4:
 			p.DictSize = uint32(1) << (uint(level) + 20)
 		default:
-			p.DictSize = uint32(1) << (oracleSizeT/2 + 24)
+			p.DictSize = uint32(1) << (sotSizeT/2 + 24)
 		}
 	}
 	if uint64(p.DictSize) > p.ReduceSize {

@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"bytes"
@@ -10,9 +10,9 @@ import (
 )
 
 // ParseMethod maps a 7-Zip method string (as given to -m0=) onto the SDK
-// properties the oracle's C++ layer passes to the public-domain encoder.
+// properties the SoT's C++ layer passes to the public-domain encoder.
 // The mapping is observed behaviour; each name is a documented 7z method
-// parameter. The dictionary is reduced to the input size as the oracle
+// parameter. The dictionary is reduced to the input size as the SoT
 // does (reduceSize). blockSize is the LZMA2 block size (c), 0 if not
 // given; isLzma2 reports an LZMA2 method string.
 func ParseMethod(t testing.TB, m string, level int, size int) (p lzma.EncProps, blockSize uint64, isLzma2 bool) {
@@ -87,7 +87,7 @@ func ParseMethod(t testing.TB, m string, level int, size int) (p lzma.EncProps, 
 }
 
 // LZMAMethodCases are the 7z -m0=LZMA method strings covered against the
-// oracle: every parameter the 7z -m switch exposes for the LZMA codec
+// SoT: every parameter the 7z -m switch exposes for the LZMA codec
 // (mf, a, fb, mc, lc, lp, pb, d, mt).
 var LZMAMethodCases = []string{
 	"LZMA", "LZMA:mf=bt2", "LZMA:mf=bt3", "LZMA:mf=bt4", "LZMA:mf=bt5", "LZMA:mf=hc4", "LZMA:mf=hc5",
@@ -96,8 +96,8 @@ var LZMAMethodCases = []string{
 }
 
 // CheckLZMA encodes input with the module for the given 7z method string
-// and -mx level and compares with the raw stream the oracle writes into
-// .7z; then it decodes the oracle's stream with the module.
+// and -mx level and compares with the raw stream the SoT writes into
+// .7z; then it decodes the SoT's stream with the module.
 func CheckLZMA(t *testing.T, root, dir string, method string, level int, input []byte) {
 	t.Helper()
 	want := SevenZRawStream(t, root, dir, input, "-m0="+method, fmt.Sprintf("-mx=%d", level))
@@ -110,12 +110,12 @@ func CheckLZMA(t *testing.T, root, dir string, method string, level int, input [
 		t.Fatal(err)
 	}
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("%s -mx%d: LZMA stream differs from oracle: got %d bytes, want %d, first difference at %d", method, level, len(got), len(want), i)
+		t.Fatalf("%s -mx%d: LZMA stream differs from SoT: got %d bytes, want %d, first difference at %d", method, level, len(got), len(want), i)
 	}
 	dst := make([]byte, len(input))
 	written, _, _, err := lzma.DecodeOneShot(dst, want, propsEncoded[:], lzma.FinishEnd)
 	if err != nil || written != len(input) || !bytes.Equal(dst, input) {
-		t.Fatalf("%s -mx%d: decoding the oracle's stream failed: written=%d err=%v", method, level, written, err)
+		t.Fatalf("%s -mx%d: decoding the SoT's stream failed: written=%d err=%v", method, level, written, err)
 	}
 }
 

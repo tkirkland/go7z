@@ -1,6 +1,6 @@
 // Package parity defines the parity checklist walked by TestParity.
 //
-// The checklist is the two fixture files generated from the pinned oracle
+// The checklist is the two fixture files generated from the pinned SoT
 // (testdata/parity/7zr-i.txt and testdata/parity/7zr-usage.txt). Each entry
 // line is one parity line: it passes when its registered check passes, and
 // fails when the check fails or no check is registered yet.

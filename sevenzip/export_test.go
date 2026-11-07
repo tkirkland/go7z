@@ -7,7 +7,7 @@ import (
 )
 
 // EncodeHeaderWith compresses a raw header with explicit LZMA
-// properties (for pinning the oracle's header coder parameters).
+// properties (for pinning the SoT's header coder parameters).
 func EncodeHeaderWith(header []byte, props lzma.EncProps, setDataSize bool) ([]byte, [5]byte, error) {
 	enc := lzma.NewEncoder()
 	if err := enc.SetProps(&props); err != nil {

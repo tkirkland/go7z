@@ -4,8 +4,8 @@ package lzma
 // finder used by the LZMA encoder. The port is literal: the same hash
 // functions, the same binary-tree / hash-chain walks, the same cyclic
 // buffer, limits and normalization, so that the match sequence (and hence
-// the encoded bytes) is identical to the oracle's single-threaded match
-// finder. (The oracle's multithreaded match finder produces the same
+// the encoded bytes) is identical to the SoT's single-threaded match
+// finder. (The SoT's multithreaded match finder produces the same
 // matches; this was verified against the pinned 7zr before porting.)
 //
 // Pointers into the window are integer offsets into mf.bufBase. The C

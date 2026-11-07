@@ -1,4 +1,4 @@
-//go:build oracle
+//go:build sot
 
 package parity
 
@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/sot"
 )
 
-// Env is what one line check gets: the repo root and the verified oracle.
+// Env is what one line check gets: the repo root and the verified SoT.
 type Env struct {
-	Root   string
-	Oracle string
+	Root string
+	SoT  string
 }
 
 // LineCheck proves one parity line. It fails the test via t.Error when the
-// module's behaviour differs from the oracle's.
+// module's behaviour differs from the SoT's.
 type LineCheck struct {
 	Name  string
 	Check func(t *testing.T, env *Env)
@@ -35,10 +35,10 @@ func TestParity(t *testing.T) {
 	root := repoRoot(t)
 	entries := loadEntries(t, root)
 
-	bin, oerr := oracle.Binary(root)
-	env := &Env{Root: root, Oracle: bin}
+	bin, oerr := sot.Binary(root)
+	env := &Env{Root: root, SoT: bin}
 
-	// Fixture integrity: the committed fixtures must equal the live oracle
+	// Fixture integrity: the committed fixtures must equal the live SoT
 	// output byte for byte, otherwise every walked line is untrustworthy.
 	if oerr == nil {
 		for _, fx := range []struct {
@@ -48,10 +48,10 @@ func TestParity(t *testing.T) {
 			{"7zr-i.txt", []string{"i"}},
 			{"7zr-usage.txt", nil},
 		} {
-			got, err := oracle.Run(root, fx.args...)
+			got, err := sot.Run(root, fx.args...)
 			want, rerr := os.ReadFile(filepath.Join(root, "testdata", "parity", fx.file))
 			if err != nil || rerr != nil || !bytes.Equal(got, want) {
-				oerr = fmt.Errorf("fixture %s differs from live oracle output (runErr=%v readErr=%v)", fx.file, err, rerr)
+				oerr = fmt.Errorf("fixture %s differs from live SoT output (runErr=%v readErr=%v)", fx.file, err, rerr)
 				break
 			}
 		}
@@ -68,7 +68,7 @@ func TestParity(t *testing.T) {
 		total++
 		ok := t.Run(e.Key, func(t *testing.T) {
 			if oerr != nil {
-				t.Errorf("oracle/fixture problem: %v", oerr)
+				t.Errorf("SoT/fixture problem: %v", oerr)
 				return
 			}
 			ch, found := checks[e.Key]

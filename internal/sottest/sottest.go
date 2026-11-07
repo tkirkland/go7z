@@ -1,8 +1,8 @@
-// Package oracletest holds helpers shared by the oracle-backed tests:
+// Package sottest holds helpers shared by the SoT-backed tests:
 // deterministic inputs, and ways to get raw codec streams out of what the
 // pinned 7zr writes (single-block .xz payloads and single-file .7z packed
-// streams), so the module's bytes can be compared with the oracle's.
-package oracletest
+// streams), so the module's bytes can be compared with the SoT's.
+package sottest
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/sot"
 )
 
 // RepoRoot finds the directory holding go.mod above the test's cwd.
@@ -59,7 +59,7 @@ func DeterministicData(size int) []byte {
 func TextLike(n int) []byte {
 	vocab := []string{"the", "lzma", "encoder", "range", "coder", "match", "finder", "binary", "tree",
 		"hash", "chain", "price", "optimal", "parser", "dictionary", "window", "stream", "block",
-		"chunk", "literal", "distance", "length", "state", "probability", "oracle", "parity", "\n"}
+		"chunk", "literal", "distance", "length", "state", "probability", "SoT", "parity", "\n"}
 	out := make([]byte, 0, n)
 	seed := uint32(7)
 	for len(out) < n {
@@ -73,7 +73,7 @@ func TextLike(n int) []byte {
 	return out[:n]
 }
 
-// XzSingleBlock parses a single-block xz stream written by the oracle and
+// XzSingleBlock parses a single-block xz stream written by the SoT and
 // returns the block's compressed payload (without the check), its LZMA2
 // dictionary property and the uncompressed size from the index.
 func XzSingleBlock(t testing.TB, data []byte) (payload []byte, prop byte, uncompressed uint64) {
@@ -165,17 +165,17 @@ func readXzVLI(b []byte) (uint64, int) {
 	return v, len(b)
 }
 
-// OracleXz writes input to a file in dir and has the oracle pack it as
+// SoTXz writes input to a file in dir and has the SoT pack it as
 // .xz with the given extra switches; it returns the .xz bytes.
-func OracleXz(t testing.TB, root, dir string, input []byte, args ...string) []byte {
+func SoTXz(t testing.TB, root, dir string, input []byte, args ...string) []byte {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "in.bin"), input, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	full := append([]string{"a", "-txz"}, args...)
 	full = append(full, filepath.Join(dir, "out.xz"), filepath.Join(dir, "in.bin"))
-	if out, err := oracle.Run(root, full...); err != nil {
-		t.Fatalf("oracle %v: %v\n%s", full, err, out)
+	if out, err := sot.Run(root, full...); err != nil {
+		t.Fatalf("SoT %v: %v\n%s", full, err, out)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "out.xz"))
 	if err != nil {
@@ -184,9 +184,9 @@ func OracleXz(t testing.TB, root, dir string, input []byte, args ...string) []by
 	return data
 }
 
-// SevenZRawStream writes a single-file .7z with the oracle and returns
+// SevenZRawStream writes a single-file .7z with the SoT and returns
 // the raw packed stream: it starts right after the 32-byte signature
-// header and its length is the "Packed Size" the oracle lists.
+// header and its length is the "Packed Size" the SoT lists.
 func SevenZRawStream(t testing.TB, root, dir string, input []byte, args ...string) []byte {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "in.bin"), input, 0o644); err != nil {
@@ -194,12 +194,12 @@ func SevenZRawStream(t testing.TB, root, dir string, input []byte, args ...strin
 	}
 	full := append([]string{"a", "-t7z"}, args...)
 	full = append(full, filepath.Join(dir, "out.7z"), filepath.Join(dir, "in.bin"))
-	if out, err := oracle.Run(root, full...); err != nil {
-		t.Fatalf("oracle %v: %v\n%s", full, err, out)
+	if out, err := sot.Run(root, full...); err != nil {
+		t.Fatalf("SoT %v: %v\n%s", full, err, out)
 	}
-	list, err := oracle.Run(root, "l", "-slt", filepath.Join(dir, "out.7z"))
+	list, err := sot.Run(root, "l", "-slt", filepath.Join(dir, "out.7z"))
 	if err != nil {
-		t.Fatalf("oracle l -slt: %v", err)
+		t.Fatalf("SoT l -slt: %v", err)
 	}
 	packed := -1
 	for _, line := range strings.Split(string(list), "\n") {
@@ -210,7 +210,7 @@ func SevenZRawStream(t testing.TB, root, dir string, input []byte, args ...strin
 		}
 	}
 	if packed < 0 {
-		t.Fatalf("no Packed Size in oracle listing")
+		t.Fatalf("no Packed Size in SoT listing")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "out.7z"))
 	if err != nil {

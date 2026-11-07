@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 )
 
 // LZMA2MethodCases are the 7z -m0=LZMA2 method strings covered against
-// the oracle, including the LZMA2 block size (c) that splits the input
+// the SoT, including the LZMA2 block size (c) that splits the input
 // into independently coded blocks.
 var LZMA2MethodCases = []string{
 	"LZMA2", "LZMA2:mf=bt2", "LZMA2:mf=hc4", "LZMA2:a=0", "LZMA2:fb=273:mc=1", "LZMA2:lc=4",
@@ -18,7 +18,7 @@ var LZMA2MethodCases = []string{
 
 // CheckLZMA2 encodes input with the module for the given 7z method string
 // and -mx level (mt1 adds -mmt1) and compares with the raw LZMA2 stream
-// the oracle writes into .7z; then it decodes the oracle's stream.
+// the SoT writes into .7z; then it decodes the SoT's stream.
 func CheckLZMA2(t *testing.T, root, dir string, method string, level int, mt1 bool, input []byte) {
 	t.Helper()
 	args := []string{"-m0=" + method, fmt.Sprintf("-mx=%d", level)}
@@ -49,20 +49,20 @@ func CheckLZMA2(t *testing.T, root, dir string, method string, level int, mt1 bo
 		t.Fatal(err)
 	}
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("%s -mx%d mt1=%v: LZMA2 stream differs from oracle: got %d bytes, want %d, first difference at %d", method, level, mt1, len(got), len(want), i)
+		t.Fatalf("%s -mx%d mt1=%v: LZMA2 stream differs from SoT: got %d bytes, want %d, first difference at %d", method, level, mt1, len(got), len(want), i)
 	}
 	dst := make([]byte, len(input))
 	written, _, _, err := lzma.Lzma2DecodeOneShot(dst, want, enc.WriteProperties(), lzma.FinishEnd)
 	if err != nil || written != len(input) || !bytes.Equal(dst, input) {
-		t.Fatalf("%s -mx%d: decoding the oracle's stream failed: written=%d err=%v", method, level, written, err)
+		t.Fatalf("%s -mx%d: decoding the SoT's stream failed: written=%d err=%v", method, level, written, err)
 	}
 }
 
 // CheckLZMA2Xz compares the module's LZMA2 stream with the payload of the
-// single-block .xz the oracle writes for -mx level.
+// single-block .xz the SoT writes for -mx level.
 func CheckLZMA2Xz(t *testing.T, root, dir string, level int, input []byte) {
 	t.Helper()
-	data := OracleXz(t, root, dir, input, fmt.Sprintf("-mx=%d", level))
+	data := SoTXz(t, root, dir, input, fmt.Sprintf("-mx=%d", level))
 	want, prop, _ := XzSingleBlock(t, data)
 	var props lzma.Lzma2EncProps
 	props.Init()
@@ -74,19 +74,19 @@ func CheckLZMA2Xz(t *testing.T, root, dir string, level int, input []byte) {
 	}
 	enc.SetDataSize(uint64(len(input)))
 	if got := enc.WriteProperties(); got != prop {
-		t.Fatalf("LZMA2 prop byte %d, oracle %d", got, prop)
+		t.Fatalf("LZMA2 prop byte %d, SoT %d", got, prop)
 	}
 	got, err := enc.EncodeBytes(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("xz -mx%d n=%d: LZMA2 stream differs from oracle: got %d bytes, want %d, first difference at %d", level, len(input), len(got), len(want), i)
+		t.Fatalf("xz -mx%d n=%d: LZMA2 stream differs from SoT: got %d bytes, want %d, first difference at %d", level, len(input), len(got), len(want), i)
 	}
 	dst := make([]byte, len(input))
 	written, _, _, err := lzma.Lzma2DecodeOneShot(dst, want, prop, lzma.FinishEnd)
 	if err != nil || written != len(input) || !bytes.Equal(dst, input) {
-		t.Fatalf("decoding the oracle's stream failed: written=%d err=%v", written, err)
+		t.Fatalf("decoding the SoT's stream failed: written=%d err=%v", written, err)
 	}
 }
 

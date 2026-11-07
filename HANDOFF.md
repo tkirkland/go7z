@@ -1,4 +1,8 @@
-# Handoff: parity with the 7-Zip 26.05 oracles, 32-bit and 64-bit
+# Handoff: parity with the 7-Zip 26.05 SoTs, 32-bit and 64-bit
+
+SoT means source of truth: the pinned 7-Zip binary whose bytes define
+what is correct. The user chose the term on 2026-11-06; use it, not
+"oracle".
 
 Written by the Claude that built go7z on 2026-11-04/05, updated by the
 deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
@@ -40,7 +44,7 @@ onset". Every parity line is therefore proven twice, once against each
 build, and a line is `done` only when both lanes pass. The 64-bit lane is
 the one real users run; the 32-bit lane exists because the source has it.
 
-Lane 32: `tools/oracle/7zr.exe`, release tag `26.05` of
+Lane 32: `tools/sot/7zr.exe`, release tag `26.05` of
 github.com/ip7z/7zip, asset `7zr.exe`, SHA-256
 `9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`,
 version line `7-Zip (r) 26.05 (x86) : Igor Pavlov : Public domain :
@@ -50,7 +54,7 @@ Lane 64: `x64/7za.exe` from the same release's asset `7z2605-extra.7z`
 (asset SHA-256
 `f27a8f103c84785026edcba1f67faf1357225df9d19ddb0b7760d55947141bc7`; a
 copy is at `tools/tmp/7z2605-extra.7z`), to be placed as
-`tools/oracle/7za-x64.exe`, SHA-256
+`tools/sot/7za-x64.exe`, SHA-256
 `7ddf0a3bc451e166679296be630d6f0573eb386159c04184761c43020c484291`,
 version line `7-Zip (a) 26.05 (x64) : Copyright (c) 1999-2026 Igor Pavlov
 : 2026-10-21`.
@@ -74,7 +78,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    says for `sizeof(size_t) == 8`: on 300 MB of zeros the coder record
    is 2^26 for mx6 on both builds, then 32-bit stays at 2^26 for mx7/8/9
    while 64-bit writes 2^27 (mx7), 2^28 (mx8), 2^28 (mx9). The port
-   keys this on `oracleSizeT` in `lzma/lzmaenc.go` (4 today); it has to
+   keys this on `sotSizeT` in `lzma/lzmaenc.go` (4 today); it has to
    become a per-encoder setting chosen by the lane.
 3. The default LZMA2 block layout differs at large inputs even with the
    same dictionary: 300 MB of zeros at mx6 gives different bytes with
@@ -107,25 +111,25 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `go version` fails.
 - Pinned source: `reference/7zip` = git tag `26.05`
   (commit `b88c6bc09339de32f7d18bbab900686b244f42ba`), gitignored.
-- `tools/fetch-oracle.ps1` fetches and verifies the 32-bit oracle only.
-  The 64-bit oracle is not fetched, not placed, not hashed by any code
-  yet; `testdata/ORACLE.md` records only the 32-bit provenance. That is
+- `tools/fetch-sot.ps1` fetches and verifies the 32-bit SoT only.
+  The 64-bit SoT is not fetched, not placed, not hashed by any code
+  yet; `testdata/SOT.md` records only the 32-bit provenance. That is
   the first harness line below.
 - Parity fixtures committed: `testdata/parity/7zr-i.txt` (1072 bytes),
   `testdata/parity/7zr-usage.txt` (2902 bytes), generated from the
-  32-bit oracle. No 64-bit fixtures exist yet.
-- TestParity: package `parity`, `//go:build oracle`. It walks 84 lines
+  32-bit SoT. No 64-bit fixtures exist yet.
+- TestParity: package `parity`, `//go:build sot`. It walks 84 lines
   (6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches) against
-  the 32-bit oracle only, verifies that oracle's hash and that the
+  the 32-bit SoT only, verifies that SoT's hash and that the
   fixtures equal its live output, and prints `parity: N of M`. A line is
   registered by adding its key to the `checks` map in an `init()` of a
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`). It has no
   lane dimension yet. Four codecs are omitted by the user (PPC, IA64,
   SPARC, RISCV), so the total is 80. Current baseline: **32-bit lane 5
   of 80; 64-bit lane 0 of 80 (no harness)**.
-- `internal/oracle`: `Binary(root)` finds and hash-verifies `7zr.exe`;
-  `Run`, `RunBinary`. Single oracle, no lane parameter.
-- Commits: `e5c143d` (harness, fixtures, oracle verifier),
+- `internal/sot`: `Binary(root)` finds and hash-verifies `7zr.exe`;
+  `Run`, `RunBinary`. Single SoT, no lane parameter.
+- Commits: `e5c143d` (harness, fixtures, SoT verifier),
   `7eeb1b3` (LZMA/LZMA2 decoders), `49f8072` (LZMA encoder, codec/LZMA),
   `998f516` (LZMA2 encoder, codec/LZMA2), `106f608` (Copy coder),
   `6218c03` (7z container), `3f3a43c` (module path), `42fabb6`..`de800ff`
@@ -140,7 +144,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
     `lzma2enc.go` (port of `Lzma2Enc.c`: `Lzma2EncProps`, `Lzma2Encoder`,
     `Encode(w, r)`, `EncodeBytes`, `WriteProperties`, block splitting).
   - The two places the C code depends on `sizeof(size_t)` (default dict
-    per level, `kNumLogBits`) follow the 32-bit build: `oracleSizeT = 4`
+    per level, `kNumLogBits`) follow the 32-bit build: `sotSizeT = 4`
     in `lzmaenc.go`. 32-bit dict per level, 7z and xz: mx1 2^18, mx2
     2^20, mx3 2^22, mx4 2^24, mx5 2^25, mx6..9 2^26, always reduced to
     the input size (`reduceSize`). 64-bit: the same through mx6, then
@@ -148,35 +152,35 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   - Three files (`lzfind.go`, `lzma2enc.go`, `lzmaenc.go`) are not
     gofmt-clean. They were left as they are; formatting them is a
     no-behaviour-change commit if anyone wants it.
-- `internal/oracletest/`: helpers shared by oracle tests and parity checks:
-  `DeterministicData`, `TextLike`, `BranchPattern`, `OracleExe` (the
-  32-bit oracle's own bytes as a real PE input), `OracleXz`,
+- `internal/sottest/`: helpers shared by SoT tests and parity checks:
+  `DeterministicData`, `TextLike`, `BranchPattern`, `SoTExe` (the
+  32-bit SoT's own bytes as a real PE input), `SoTXz`,
   `XzSingleBlock`, `SevenZRawStream` (the raw packed stream of a
   single-file .7z starts at offset 32 and its length is the `Packed
   Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
   `RunCopyMatrix`, `RunBCJMatrix`, `SevenZCases(exe)`, `RunSevenZMatrix`.
-  All of them run the 32-bit oracle through `oracle.Binary(root)`.
+  All of them run the 32-bit SoT through `sot.Binary(root)`.
 - Proof of the encoders on the 32-bit lane (all byte-identical):
-  - `TestEncodeOracleLZMA` / parity `codec/LZMA`: 26 cases, raw LZMA
+  - `TestEncodeSoTLZMA` / parity `codec/LZMA`: 26 cases, raw LZMA
     streams from `.7z -m0=LZMA:<params>` with mf=bt2/bt3/bt4/bt5/hc4/hc5,
     a=0, fb=5/273, mc=1/1000, lc/lp/pb extremes, d=4k/16k, mt=1, levels
     1/3/5/7/9, sizes 1/100/4096/300000.
-  - `TestEncodeOracleLZMA2` / parity `codec/LZMA2`: 42 cases, raw LZMA2
+  - `TestEncodeSoTLZMA2` / parity `codec/LZMA2`: 42 cases, raw LZMA2
     streams from `.7z -m0=LZMA2:<params>` including `c=` block splitting
     (block threads and `-mmt1`), plus single-block `.xz` payloads at
     sizes 1..300000, levels 1..9.
-  - `TestDecodeOracleXz`: 12 cases (decoder).
-- Facts established with the 32-bit oracle (do not re-derive):
-  1. The oracle's `-mmt1`, `-mmt2` and default output is byte-identical
+  - `TestDecodeSoTXz`: 12 cases (decoder).
+- Facts established with the 32-bit SoT (do not re-derive):
+  1. The SoT's `-mmt1`, `-mmt2` and default output is byte-identical
      (9 inputs x levels, inputs up to a few MB), so `LzFind.c`
      (single-threaded) is the reference; `LzFindMt.c` is not needed for
      identity. At 300 MB and mx6+ the default differs between builds
      (lane item 3), so the thread default is a per-lane observation.
   2. `7zr a -tlzma` prints `System ERROR: Not implemented` (exit 2). The
-     oracle cannot create `.lzma`; the lzma format line is read-side plus
+     SoT cannot create `.lzma`; the lzma format line is read-side plus
      that same refusal on create. Whether `7za` x64 behaves the same is
      not observed.
-  3. The oracle's `.xz` uses the CRC32 check by default; one block for
+  3. The SoT's `.xz` uses the CRC32 check by default; one block for
      inputs below the auto block size (4 x dict, clamped to 1 MB..256 MB).
      On a 300 MB zero file, mx1 and mx5 wrote multi-block xz with block
      sizes 1 MB and 128 MB; mx9 (64 MB dict, 256 MB blocks) wrote a single
@@ -186,7 +190,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   4. In 7z, `-m0=LZMA2:c=N` sets the LZMA2 block size and reduces the
      dictionary to it; `lc+lp>4` is rejected for LZMA2 (as the SDK does).
   5. `ReduceSize` = input size and `SetDataSize` = input size reproduce
-     the oracle for 7z and xz; for multi-block LZMA2 the per-block expected
+     the SoT for 7z and xz; for multi-block LZMA2 the per-block expected
      size is the block length (MtCoder uses direct input per block).
 - Copy was marked without the container: the raw packed stream of a
   single-file `-m0=Copy` .7z (`SevenZRawStream`) is the identity, 13 cases
@@ -199,13 +203,13 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
   no public-domain writer source. Both sides handle two-coder folders
   (method + filter, one bond). `number.go` has the variable-length number
-  and bit vectors. Proof: `TestOracle7z` / parity `format/7z`, 89 cases
-  byte-identical to the 32-bit oracle's archives (Copy, LZMA, LZMA2 at
+  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 89 cases
+  byte-identical to the 32-bit SoT's archives (Copy, LZMA, LZMA2 at
   levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and directories,
   nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`, `-mtc=on`,
   `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases), and the module reads
-  every oracle archive back (names, sizes, CRCs, contents).
-- Container facts observed on the 32-bit oracle (do not re-derive):
+  every SoT archive back (names, sizes, CRCs, contents).
+- Container facts observed on the 32-bit SoT (do not re-derive):
   1. Header layout: kHeader, MainStreamsInfo (PackInfo with PackPos 0;
      UnpackInfo with one folder record per folder; SubStreamsInfo with
      kNumUnpackStream only when some folder has != 1 streams, kSize for all
@@ -240,18 +244,18 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   (`X86Convert` with the carried state, `X86Encode`/`X86Decode` whole
   buffer, `NewX86EncodeReader`/`NewX86DecodeReader` streaming with the
   unprocessed tail carried over as 7-Zip's filter coder does). Proof:
-  `TestEncodeOracleBCJ` / parity `codec/BCJ`, 37 cases byte-identical to
-  the raw packed stream of `-m0=BCJ` (the oracle binary itself as a real
+  `TestEncodeSoTBCJ` / parity `codec/BCJ`, 37 cases byte-identical to
+  the raw packed stream of `-m0=BCJ` (the SoT binary itself as a real
   PE, slices of it, deterministic binary and text 0..3 MB, branch-opcode
   patterns, all-E8/E9/00/FF, levels 1/9), whole-buffer and streaming
-  with uneven chunks, and the oracle's streams decode back. The 7z
+  with uneven chunks, and the SoT's streams decode back. The 7z
   container exposes it as `Options.Filter = BCJ` with `Method` LZMA2,
   LZMA, Copy or `None` (filter alone).
-- Filter facts observed on the 32-bit oracle (do not re-derive):
+- Filter facts observed on the 32-bit SoT (do not re-derive):
   1. `-m0=BCJ` alone: the folder's only coder is BCJ (`04 03 03 01 03`,
      no properties), packed size = unpacked size; the level does not add
      a compressor. `7zDec.c` rejects such a folder (first coder must be
-     a main method); the module reads it anyway because the oracle does.
+     a main method); the module reads it anyway because the SoT does.
   2. `-m0=BCJ -m1=<M>` and `-mf=BCJ` (same bytes with the default or
      `-m0=<M>` method): two coders, the method first, BCJ second, one
      bond `01 00` (in-stream 1 from coder 0), the single pack stream
@@ -264,10 +268,10 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
      the coder's solid limit and dictionary reduction rules.
   5. The filter output for a stream is the same whether the converter
      runs over the whole buffer or over chunks with the tail carried
-     (proven by the 600 KB PE case, where the oracle chunks internally).
+     (proven by the 600 KB PE case, where the SoT chunks internally).
 - The executables inside `7z2605-extra.7z` are packed with LZMA + BCJ2
-  (checked with `l -slt`), so the module cannot extract the 64-bit oracle
-  itself until the BCJ2 line is done. The 32-bit oracle extracts it
+  (checked with `l -slt`), so the module cannot extract the 64-bit SoT
+  itself until the BCJ2 line is done. The 32-bit SoT extracts it
   today; that is how the harness line gets the binary.
 
 ## How you fail, and the rule that stops each one
@@ -311,12 +315,12 @@ text you are wrong, and the user pays for it.
 7. **You recite the order-of-work rule and then order by what feels
    foundational.** The 2026-11-06 session read this handoff, repeated the
    rule back to the user, and then ported the decoder first because
-   "nothing can be proven without reading oracle output". Result: a full
+   "nothing can be proven without reading SoT output". Result: a full
    session, two commits, and 0 of 84 checklist lines; the encoder, the
    thing that does not exist in Go and the actual critical path, was still
    unwritten. Rule: the checklist is the control. A detour that marks no
    checklist line is drift, no matter how foundational it feels. The
-   encoder is verified with the oracle, not with a decoder you wrote first.
+   encoder is verified with the SoT, not with a decoder you wrote first.
 
 8. **You proved one build and called it parity.** The first session
    pinned `7zr.exe`, the only standalone console binary 7-Zip publishes,
@@ -329,7 +333,7 @@ text you are wrong, and the user pays for it.
 
 ## What "parity" means here, mechanically
 
-Parity is defined by the oracle binaries, not by anyone's description of
+Parity is defined by the SoT binaries, not by anyone's description of
 them:
 
 - `7zr i` lists the codecs, formats and hashers (saved in
@@ -339,12 +343,12 @@ them:
 - The 64-bit lane will have the same two fixtures from `7za-x64.exe`
   (`7za-x64-i.txt`, `7za-x64-usage.txt`), once the harness line is done.
 
-`go test -tags oracle -run TestParity ./...` walks those lists: 84 lines
+`go test -tags sot -run TestParity ./...` walks those lists: 84 lines
 (6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches) minus
 the four codecs the user omitted on 2026-11-06 (PPC, IA64, SPARC,
 RISCV), so 80 per lane.
 Each line is a pass or a fail in each lane. A line the module rejects is a
-fail. A line where the module's bytes differ from that lane's oracle is a
+fail. A line where the module's bytes differ from that lane's SoT is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
 end (today it prints one unlabelled `parity: N of M` for the 32-bit lane
 only). Parity is `M of M` in both lanes. Omitted lines are listed by
@@ -353,9 +357,9 @@ softer.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
 and IV; `b` benchmark prints timings), the line passes when: the module
-reproduces the oracle's structure exactly given the oracle's random values
-(injected through the API), the oracle extracts what the module wrote, and
-the module extracts what the oracle wrote. Say that this is the criterion
+reproduces the SoT's structure exactly given the SoT's random values
+(injected through the API), the SoT extracts what the module wrote, and
+the module extracts what the SoT wrote. Say that this is the criterion
 in the report; do not quietly count it as identity.
 
 ## Licensing constraint (this one is real, not a scope choice)
@@ -363,7 +367,7 @@ in the report; do not quietly count it as identity.
 The C encoder/decoder files in the SDK are public domain and may be ported.
 The C++ archive layer of 7-Zip is LGPL and is not ported; its behaviour is
 reproduced from observation and from the format documentation. The 32-bit
-oracle `7zr` contains no LGPL-only codecs, so every line on the 84-line
+SoT `7zr` contains no LGPL-only codecs, so every line on the 84-line
 checklist has a public-domain source file:
 
 | Codec / format                | Public-domain SDK source                   |
@@ -387,7 +391,7 @@ checklist has a public-domain source file:
 |                               | (SHA-256 over salt+password(UTF-16LE)+     |
 |                               | counter, 2^19 rounds, salt 0 bytes, IV 16  |
 |                               | bytes by default): re-verify against this  |
-|                               | oracle before relying on it                |
+|                               | SoT before relying on it                |
 | xz format                     | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`,        |
 |                               | `C/XzIn.c`, `C/XzCrc64.c`                  |
 | lzma, lzma86 formats          | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the   |
@@ -396,7 +400,7 @@ checklist has a public-domain source file:
 |                               | (Go stdlib gives identical values;         |
 |                               | identity is on output format)              |
 | Split volumes                 | format: raw byte split, names `.001`,      |
-|                               | `.002`; semantics observed from the oracle |
+|                               | `.002`; semantics observed from the SoT |
 
 The 64-bit `7za` lists 12 lines beyond those 84 (see the end of the
 checklist). Deflate, Deflate64 and BZip2 exist only in the LGPL C++
@@ -412,12 +416,12 @@ run, so every box is open.
 
 ### Harness (the 64-bit lane does not exist until these are done)
 
-- [ ] 64-bit oracle placed and pinned: `tools/fetch-oracle.ps1` fetches
+- [ ] 64-bit SoT placed and pinned: `tools/fetch-sot.ps1` fetches
       `7z2605-extra.7z` (SHA-256 in the lane section), extracts
-      `x64/7za.exe` with the verified 32-bit oracle, verifies SHA-256
-      `7ddf0a3b…484291`, places `tools/oracle/7za-x64.exe`;
-      `testdata/ORACLE.md` records it: not done
-- [ ] `internal/oracle` takes a lane (`Binary(root, lane)`, `Run`,
+      `x64/7za.exe` with the verified 32-bit SoT, verifies SHA-256
+      `7ddf0a3b…484291`, places `tools/sot/7za-x64.exe`;
+      `testdata/SOT.md` records it: not done
+- [ ] `internal/sot` takes a lane (`Binary(root, lane)`, `Run`,
       `RunBinary`) and verifies the 64-bit hash and version line: not done
 - [ ] Fixtures `testdata/parity/7za-x64-i.txt` and `7za-x64-usage.txt`
       committed and checked against live output like the 32-bit ones:
@@ -425,10 +429,10 @@ run, so every box is open.
 - [ ] TestParity walks every line in both lanes, subtests `32/<key>` and
       `64/<key>`, prints `parity 32: N of 80` and `parity 64: N of 80`:
       not done
-- [ ] `oracleSizeT` becomes a per-encoder build setting (32 or 64) that
+- [ ] `sotSizeT` becomes a per-encoder build setting (32 or 64) that
       the lane selects; the 64-bit setting reproduces 2^27/2^28/2^28 at
       mx7/8/9 (lane item 2): not done
-- [ ] Every oracletest matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
+- [ ] Every sottest matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
       `RunCopyMatrix`, `RunBCJMatrix`, `RunSevenZMatrix`) runs per lane,
       with at least one input above 256 MB at mx7..9 so the unreduced
       dictionaries are reached, and one at mx6 with default threads so
@@ -436,13 +440,13 @@ run, so every box is open.
 
 ### Codecs (`7zr i`; 13 counted, 4 omitted)
 
-- [ ] Copy: 32 done: `TestEncodeOracleCopy` (parity key `codec/Copy`);
+- [ ] Copy: 32 done: `TestEncodeSoTCopy` (parity key `codec/Copy`);
       64 not done
-- [ ] LZMA: 32 done: `TestEncodeOracleLZMA` (parity key `codec/LZMA`);
+- [ ] LZMA: 32 done: `TestEncodeSoTLZMA` (parity key `codec/LZMA`);
       64 not done
-- [ ] LZMA2: 32 done: `TestEncodeOracleLZMA2` (parity key `codec/LZMA2`);
+- [ ] LZMA2: 32 done: `TestEncodeSoTLZMA2` (parity key `codec/LZMA2`);
       64 not done
-- [ ] BCJ: 32 done: `TestEncodeOracleBCJ` (parity key `codec/BCJ`);
+- [ ] BCJ: 32 done: `TestEncodeSoTBCJ` (parity key `codec/BCJ`);
       64 not done
 - [ ] BCJ2: 32 not done; 64 not done
 - [ ] ARM: 32 not done; 64 not done
@@ -470,7 +474,7 @@ run, so every box is open.
 
 ### Formats (`7zr i`, `-t`)
 
-- [ ] 7z: 32 done: `TestOracle7z` (parity key `format/7z`); 64 not done
+- [ ] 7z: 32 done: `TestSoT7z` (parity key `format/7z`); 64 not done
 - [ ] xz (`-txz`, with `-mf` filters, `-mmt` block splitting, check type;
       block splitting is lane dependent, lane items 3 and 4): 32 not
       done; 64 not done
@@ -494,9 +498,9 @@ run, so every box is open.
 
 ### Switches (`7zr` usage)
 
-- [ ] -m (every parameter the oracle accepts after `-m`, observed from it;
+- [ ] -m (every parameter the SoT accepts after `-m`, observed from it;
       the LZMA/LZMA2 subset is mapped in
-      `internal/oracletest.ParseMethod`): 32 not done; 64 not done
+      `internal/sottest.ParseMethod`): 32 not done; 64 not done
 - [ ] -o, -y, -slt: 32 not done; 64 not done
 - [ ] -p, -mhe: 32 not done; 64 not done
 - [ ] -v: 32 not done; 64 not done
@@ -508,7 +512,7 @@ run, so every box is open.
 - [ ] -bb, -bd, -bs, -bt, -scc, -scs, -scrc, -slp, -stm, -stx, -sfx,
       -seml, --: 32 not done; 64 not done
 
-### Lines only the 64-bit oracle lists (user decision pending)
+### Lines only the 64-bit SoT lists (user decision pending)
 
 `7za i` on the 64-bit binary lists these in addition to the 84 above.
 They are not counted in either lane until the user says whether they are
@@ -539,7 +543,7 @@ BCJ) and format/7z get their 64-bit mark, which is where the mx7..9
 dictionary difference and the mx6 block layout are proven. Then BCJ2 and
 down the list, each line in both lanes before the next line: port the
 public-domain source faithfully, add its line to the parity test, run
-both oracles, mark both lanes. Commit per line. Never spend a session on
+both SoTs, mark both lanes. Commit per line. Never spend a session on
 anything that marks no line.
 
 ## Reporting

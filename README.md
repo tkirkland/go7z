@@ -3,7 +3,8 @@
 A pure Go implementation of 7-Zip's LZMA, LZMA2, BCJ filter and 7z
 container, written to be byte-identical to 7-Zip itself.
 
-The reference is a pinned copy of 7-Zip 26.05 (`7zr.exe`, SHA-256
+The source of truth (SoT, the word used throughout this repo) is a pinned
+copy of 7-Zip 26.05 (`7zr.exe`, SHA-256
 verified). Every feature is proven by comparing the module's output with
 that binary's output on the same input, byte for byte. There is no other
 definition of correct.
@@ -22,7 +23,7 @@ yet).
 
 | Line (32-bit) | Proof                                                   |
 | ------------- | ------------------------------------------------------- |
-| codec/Copy    | `copycoder`: 13 cases identical to the oracle           |
+| codec/Copy    | `copycoder`: 13 cases identical to the SoT           |
 | codec/LZMA    | `lzma`: encoder and decoder, 26 cases identical         |
 | codec/LZMA2   | `lzma`: encoder and decoder, 42 cases identical         |
 | codec/BCJ     | `bra`: x86 converter, 37 cases identical                |
@@ -44,7 +45,7 @@ for the full checklist and the order of work.
   `7zDec.c`. The writer has no public-domain source; it is built from
   `DOC/7zFormat.txt` and from observing what `7zr` writes.
 - `parity`: the scoreboard test.
-- `internal/oracle`, `internal/oracletest`: locating and running the
+- `internal/sot`, `internal/sottest`: locating and running the
   pinned binary, and the comparison helpers.
 
 ## Usage
@@ -72,21 +73,21 @@ Raw codec streams are available through `lzma.EncodeBytes`,
 
 ## Running the parity tests
 
-The oracle binary is not in the repository. Fetch and verify it once:
+The SoT binary is not in the repository. Fetch and verify it once:
 
 ```
-powershell tools/fetch-oracle.ps1
+powershell tools/fetch-sot.ps1
 ```
 
 Then:
 
 ```
-go test -tags oracle ./...
-go test -tags oracle -run TestParity ./parity/
+go test -tags sot ./...
+go test -tags sot -run TestParity ./parity/
 ```
 
 `TestParity` prints `parity: N of 84` and fails until N is 84. The tests
-run the oracle for every case, so they need Windows.
+run the SoT for every case, so they need Windows.
 
 The pinned sources used for the ports are git tag `26.05` of
 `github.com/ip7z/7zip`, cloned to `reference/7zip` (ignored by git).

@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"bytes"
@@ -9,19 +9,19 @@ import (
 )
 
 // CheckCopy encodes input with the module's Copy coder and compares with
-// the raw stream the oracle writes into .7z for the given arguments
+// the raw stream the SoT writes into .7z for the given arguments
 // (either -m0=Copy at a level, or a bare -mx0, which selects Copy); then it
-// decodes the oracle's stream with the module.
+// decodes the SoT's stream with the module.
 func CheckCopy(t *testing.T, root, dir string, input []byte, args ...string) {
 	t.Helper()
 	want := SevenZRawStream(t, root, dir, input, args...)
 	got := copycoder.EncodeBytes(input)
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("%v: Copy stream differs from oracle: got %d bytes, want %d, first difference at %d", args, len(got), len(want), i)
+		t.Fatalf("%v: Copy stream differs from SoT: got %d bytes, want %d, first difference at %d", args, len(got), len(want), i)
 	}
 	dec := copycoder.DecodeBytes(want)
 	if !bytes.Equal(dec, input) {
-		t.Fatalf("%v: decoding the oracle's stream failed: %d bytes, want %d", args, len(dec), len(input))
+		t.Fatalf("%v: decoding the SoT's stream failed: %d bytes, want %d", args, len(dec), len(input))
 	}
 }
 

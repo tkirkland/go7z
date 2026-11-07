@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
-// SevenZCases is the container matrix compared with the oracle: single
+// SevenZCases is the container matrix compared with the SoT: single
 // files at every method and level, empty files and directories,
 // multi-file solid and non-solid archives, header compression on and
 // off, nested directories, name ordering, CTime, and sizes that make the
@@ -165,7 +165,7 @@ func SevenZCases(exe []byte) []SevenZCase {
 
 // RunSevenZMatrix runs every container case as a parallel subtest.
 func RunSevenZMatrix(t *testing.T, root string) {
-	for _, c := range SevenZCases(OracleExe(t, root)) {
+	for _, c := range SevenZCases(SoTExe(t, root)) {
 		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()

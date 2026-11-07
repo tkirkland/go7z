@@ -51,7 +51,7 @@ const (
 // LevelStore is the Level value for -mx0.
 const LevelStore = -1
 
-// Options control archive creation. The zero value is the oracle's
+// Options control archive creation. The zero value is the SoT's
 // default: LZMA2 at level 5, solid, compressed header, MTime stored.
 type Options struct {
 	Method Method
@@ -177,7 +177,7 @@ func nameKey(r rune) rune {
 	return unicode.ToUpper(r)
 }
 
-// nameLess orders archive names as the oracle does.
+// nameLess orders archive names as the SoT does.
 func nameLess(a, b string) bool {
 	ra, rb := []rune(a), []rune(b)
 	for i := 0; i < len(ra) && i < len(rb); i++ {
@@ -205,7 +205,7 @@ func (it *item) group() int {
 	}
 }
 
-// solidSize is the default solid block limit (observed on the oracle
+// solidSize is the default solid block limit (observed on the SoT
 // with 1 MB files: LZMA mx1 32 MB, -md=64k and -md=4k 16 MB, -md=1m 128 MB;
 // LZMA2 mx1 and -md=4k/64k/256k 64 MB, -md=512k 128 MB). dict is the
 // coder dictionary for the level before reduction. Inputs above 200 MB
@@ -475,7 +475,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	return err
 }
 
-// headerEncProps are the LZMA parameters the oracle uses for the packed
+// headerEncProps are the LZMA parameters the SoT uses for the packed
 // header: dictionary 1 MB (in the coder record), fast bytes 273, normal
 // parser, bt2 match finder, default cycles (pinned by byte identity on a
 // 74 KB header in TestHeaderEncoderParams; bt3 also matched there).
@@ -493,7 +493,7 @@ var headerEncProps = func() lzma.EncProps {
 // size (it changes the match finder's hash size and so the bytes).
 var headerSetDataSize = false
 
-// encodeHeader compresses the raw header with the oracle's header coder.
+// encodeHeader compresses the raw header with the SoT's header coder.
 // The dictionary is reduced to the header size (observed: the coder
 // record of a 278-byte header says 4096).
 func encodeHeader(header []byte) ([]byte, [5]byte, error) {

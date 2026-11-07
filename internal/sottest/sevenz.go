@@ -1,4 +1,4 @@
-package oracletest
+package sottest
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tkirkland/go7z/internal/oracle"
+	"github.com/tkirkland/go7z/internal/sot"
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
@@ -22,7 +22,7 @@ type TreeFile struct {
 }
 
 // FixedMTime is the modification time given to every tree item so that
-// both the oracle and the module see the same metadata.
+// both the SoT and the module see the same metadata.
 var FixedMTime = time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 
 // MakeTree creates the files under dir. Directories are created for
@@ -67,13 +67,13 @@ type SevenZCase struct {
 	Name   string
 	Files  []TreeFile
 	Inputs []string // path arguments, relative to the tree root
-	Args   []string // extra oracle switches
+	Args   []string // extra SoT switches
 	Opts   sevenzip.Options
 }
 
 // CheckSevenZ creates the tree in dir, writes the archive with the
-// oracle and with the module, requires byte identity, and then reads
-// the oracle's archive with the module and checks every entry against
+// SoT and with the module, requires byte identity, and then reads
+// the SoT's archive with the module and checks every entry against
 // the tree.
 func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 	t.Helper()
@@ -83,15 +83,15 @@ func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 	}
 	MakeTree(t, tree, c.Files)
 
-	oraclePath := filepath.Join(dir, "oracle.7z")
+	sotPath := filepath.Join(dir, "SoT.7z")
 	args := append([]string{"a", "-t7z"}, c.Args...)
-	args = append(args, oraclePath)
+	args = append(args, sotPath)
 	args = append(args, c.Inputs...)
-	cmdOut, err := runOracleIn(root, tree, args...)
+	cmdOut, err := runSoTIn(root, tree, args...)
 	if err != nil {
-		t.Fatalf("oracle %v: %v\n%s", args, err, cmdOut)
+		t.Fatalf("SoT %v: %v\n%s", args, err, cmdOut)
 	}
-	want, err := os.ReadFile(oraclePath)
+	want, err := os.ReadFile(sotPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,13 +117,13 @@ func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 		t.Fatal(err)
 	}
 	if i := FirstDifference(got, want); i >= 0 {
-		t.Fatalf("%s: archive differs from oracle at byte %d (got %d bytes, want %d)\n%s", c.Name, i, len(got), len(want), describeDiff(got, want, i))
+		t.Fatalf("%s: archive differs from SoT at byte %d (got %d bytes, want %d)\n%s", c.Name, i, len(got), len(want), describeDiff(got, want, i))
 	}
 
-	// Read the oracle's archive with the module.
+	// Read the SoT's archive with the module.
 	a, err := sevenzip.Open(bytes.NewReader(want), int64(len(want)))
 	if err != nil {
-		t.Fatalf("%s: module cannot open the oracle's archive: %v", c.Name, err)
+		t.Fatalf("%s: module cannot open the SoT's archive: %v", c.Name, err)
 	}
 	expect := map[string]TreeFile{}
 	for _, tf := range c.Files {
@@ -152,15 +152,15 @@ func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 	}
 }
 
-// runOracleIn runs the oracle with cwd set to dir (oracle.Run uses dir
+// runSoTIn runs the SoT with cwd set to dir (sot.Run uses dir
 // both to locate the binary and as the working directory; the binary is
 // found by walking up from root, so pass root for lookup and dir to run).
-func runOracleIn(root, dir string, args ...string) ([]byte, error) {
-	bin, err := oracle.Binary(root)
+func runSoTIn(root, dir string, args ...string) ([]byte, error) {
+	bin, err := sot.Binary(root)
 	if err != nil {
 		return nil, err
 	}
-	return oracle.RunBinary(bin, dir, args...)
+	return sot.RunBinary(bin, dir, args...)
 }
 
 // describeDiff shows the bytes around the first difference and, when it

@@ -1,4 +1,4 @@
-//go:build oracle
+//go:build sot
 
 package lzma_test
 
@@ -6,22 +6,22 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/sottest"
 	"github.com/tkirkland/go7z/lzma"
 )
 
-// TestDecodeOracleXz decodes .xz files written by the pinned 7zr (single
+// TestDecodeSoTXz decodes .xz files written by the pinned 7zr (single
 // block, LZMA2) and requires byte-identical output.
-func TestDecodeOracleXz(t *testing.T) {
-	root := oracletest.RepoRoot(t)
+func TestDecodeSoTXz(t *testing.T) {
+	root := sottest.RepoRoot(t)
 	for _, size := range []int{1, 100, 4096, 1 << 16} {
 		for _, level := range []string{"1", "5", "9"} {
 			size, level := size, level
 			t.Run(t.Name(), func(t *testing.T) {
 				t.Parallel()
-				input := oracletest.DeterministicData(size)
-				data := oracletest.OracleXz(t, root, t.TempDir(), input, "-mx="+level)
-				payload, prop, uncompressed := oracletest.XzSingleBlock(t, data)
+				input := sottest.DeterministicData(size)
+				data := sottest.SoTXz(t, root, t.TempDir(), input, "-mx="+level)
+				payload, prop, uncompressed := sottest.XzSingleBlock(t, data)
 				if uncompressed != uint64(len(input)) {
 					t.Fatalf("xz index uncompressed size %d, want %d", uncompressed, len(input))
 				}

@@ -1,22 +1,22 @@
-//go:build oracle
+//go:build sot
 
 package parity
 
 import (
 	"testing"
 
-	"github.com/tkirkland/go7z/internal/oracletest"
+	"github.com/tkirkland/go7z/internal/sottest"
 )
 
 // format/7z: the module writes .7z archives byte-identical to the
-// oracle's (sevenzip/writer.go, from DOC/7zFormat.txt and observation)
-// and reads the oracle's archives (sevenzip/reader.go, ported from
+// SoT's (sevenzip/writer.go, from DOC/7zFormat.txt and observation)
+// and reads the SoT's archives (sevenzip/reader.go, ported from
 // 7zArcIn.c and 7zDec.c) for the container matrix.
 func init() {
 	checks["format/7z"] = LineCheck{
-		Name: "7z container identical to oracle",
+		Name: "7z container identical to SoT",
 		Check: func(t *testing.T, env *Env) {
-			oracletest.RunSevenZMatrix(t, env.Root)
+			sottest.RunSevenZMatrix(t, env.Root)
 		},
 	}
 }

@@ -1079,7 +1079,7 @@ func (a *Archive) decodeFolder(p *szAr, fo int, dataStart uint64) ([]byte, error
 	case MethodBCJ:
 		// The filter as the folder's only coder (-m0=BCJ with no -m1).
 		// 7zDec.c rejects this (the first coder must be a main method);
-		// the oracle writes and reads it, so the module reads it too.
+		// the SoT writes and reads it, so the module reads it too.
 		if filter != nil || len(c.props) != 0 || inSize != outSize {
 			return nil, ErrUnsupported
 		}
