@@ -16,6 +16,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"hash/crc64"
+	"slices"
 	"strings"
 )
 
@@ -44,8 +45,8 @@ type crcLE struct {
 
 func (c crcLE) Sum(b []byte) []byte {
 	s := c.Hash.Sum(nil)
-	for i := len(s) - 1; i >= 0; i-- {
-		b = append(b, s[i])
+	for _, v := range slices.Backward(s) {
+		b = append(b, v)
 	}
 	return b
 }
