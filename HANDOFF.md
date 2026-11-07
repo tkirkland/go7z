@@ -129,9 +129,9 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    commands and the other 46 switches are identical. The user ruled on
    2026-11-06 that all 12 count ("all 12, wtf"). They are in the
    checklist below. Five of them (Deflate, Deflate64, BZip2 and the gzip
-   and bzip2 formats that need them) have LGPL-only compressors; their
-   mark is `blocked: LGPL-only source` until the user says what to do
-   about that, and that mark is reported as such, never as done.
+   and bzip2 formats that need them) have no C/ source, only the C++
+   layer; the user ruled on 2026-11-07 that they count and are to be
+   done from that source like every other line ("all 12").
 
 ## Session state (2026-11-07, after the ARM64 .. hashers session)
 
@@ -158,8 +158,8 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
 of 92`, then the omitted, blocked and failing lines by name. A line is
   registered by adding its key to the `checks` map in an `init()` of a
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
-  check runs in both lanes with `env.Lane`. The six LGPL-only lines are
-  in `parity.Blocked` and fail with that reason. Current baseline:
+  check runs in both lanes with `env.Lane`. `parity.Blocked` is empty
+  (the user ruled 2026-11-07 that no line is blocked). Current baseline:
   **32-bit lane 13 of 92; 64-bit lane 13 of 92** (both against `7za`,
   large inputs included). A full run takes about 14 minutes for the
   small matrices plus the large cases (below).
@@ -720,7 +720,8 @@ fail. A line where the module's bytes differ from that lane's SoT is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
 end. Parity is `M of M` in both lanes.
 Omitted lines are listed by name in the output, never counted as
-passes; lines blocked by licensing are failures with that reason.
+passes. No line is blocked: the user ruled on 2026-11-07 that all 12
+lines `7za` adds are to be done.
 Report both numbers and nothing softer.
 
 Where byte identity is impossible by construction (7zAES uses a random salt
@@ -730,13 +731,17 @@ reproduces the SoT's structure exactly given the SoT's random values
 the module extracts what the SoT wrote. Say that this is the criterion
 in the report; do not quietly count it as identity.
 
-## Licensing constraint (this one is real, not a scope choice)
+## Sources per line
 
-The C encoder/decoder files in the SDK are public domain and may be ported.
-The C++ archive layer of 7-Zip is LGPL and is not ported; its behaviour is
-reproduced from observation and from the format documentation. The 32-bit
-SoT `7zr` contains no LGPL-only codecs, so every line on the 84-line
-checklist has a public-domain source file:
+The C encoder/decoder files in the SDK are public domain and are ported.
+The C++ layer of 7-Zip is LGPL; earlier sessions reproduced its
+behaviour from observation and did not port it, and a session wrote
+that Deflate, Deflate64, BZip2, Cab, gzip and bzip2 were "blocked" for
+having only that source. The user ruled on 2026-11-07 that this was
+never the user's constraint: all 12 lines `7za` adds count and are to
+be done ("all 12"), from the C++ source where that is the only one.
+Files ported from it carry the LGPL; the module's MIT license needs a
+notice for them when they land. Sources per line:
 
 | Codec / format                | Public-domain SDK source                   |
 | ----------------------------- | ------------------------------------------ |
@@ -776,13 +781,12 @@ public-domain ones have sources: PPMd (`C/Ppmd7.c`, `C/Ppmd7Enc.c`),
 SHA1 (`C/Sha1.c`), XXH64 (`C/Xxh64.c`), the zstd decoder
 (`C/ZstdDec.c`, decode only, as 7-Zip lists it), and the tar and zip
 containers (public formats, reproduced from observation like the 7z
-writer). Deflate, Deflate64 and BZip2 exist only in the LGPL C++ layer,
-and gzip and bzip2 are those codecs with a header; the Cab reader is
-LGPL C++ too. Those lines are marked `blocked: LGPL-only source`. If any
-line ever needs an LGPL encoder, stop and tell the user; do not port it
-and do not pretend a different encoder is the same thing. The user has
-been told (2026-11-06) and has not yet said what to do about the blocked
-lines.
+writer). Deflate, Deflate64 and BZip2 exist only in the C++ layer
+(`CPP/7zip/Compress/DeflateEncoder.cpp`, `DeflateDecoder.cpp`,
+`BZip2Encoder.cpp`, `BZip2Decoder.cpp`), gzip and bzip2 are those codecs
+with a header, and the Cab reader is C++ too (`CPP/7zip/Archive/Cab`).
+They are ordinary not-done lines, ported from that source when reached
+(user ruling 2026-11-07).
 
 ## The checklist
 
@@ -866,10 +870,11 @@ box is ticked only when both lanes are done.
       without key derivation): 32 not done; 64 not done
 - [x] PPMD: 32 done: `TestEncodeSoTPPMD/32` (parity key `codec/PPMD`;
       container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTPPMD/64`
-- [ ] Deflate: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
-- [ ] Deflate64: 32 blocked: LGPL-only source; 64 blocked: LGPL-only
-      source
-- [ ] BZip2: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
+- [ ] Deflate (`CPP/7zip/Compress/DeflateEncoder.cpp`, `DeflateDecoder.cpp`): 32
+      not done; 64 not done
+- [ ] Deflate64 (same files, 64 KB window): 32 not done; 64 not done
+- [ ] BZip2 (`CPP/7zip/Compress/BZip2Encoder.cpp`, `BZip2Decoder.cpp`): 32 not
+      done; 64 not done
 
 ### Hashers (`7za i`)
 
@@ -923,12 +928,10 @@ box is ticked only when both lanes are done.
       default Deflate payload is LGPL-only): 32 not done; 64 not done
 - [ ] zstd (`C/ZstdDec.c`, read side only, as 7-Zip lists it): 32 not
       done; 64 not done
-- [ ] Cab (read-only in 7-Zip; LGPL C++ reader): 32 blocked: LGPL-only
-      source; 64 blocked: LGPL-only source
-- [ ] gzip (needs Deflate): 32 blocked: LGPL-only source; 64 blocked:
-      LGPL-only source
-- [ ] bzip2 (needs BZip2): 32 blocked: LGPL-only source; 64 blocked:
-      LGPL-only source
+- [ ] Cab (read-only in 7-Zip; `CPP/7zip/Archive/Cab`): 32 not done; 64 not
+      done
+- [ ] gzip (needs Deflate): 32 not done; 64 not done
+- [ ] bzip2 (needs BZip2): 32 not done; 64 not done
 
 ### Commands
 
@@ -989,9 +992,8 @@ with their source situation.
 Top to bottom. No reordering by what seems important. One line per
 session (failure 9): after the line is done in both lanes and committed,
 update this file, report, and stop. The harness
-section is done. The lines marked `blocked: LGPL-only source` are
-skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is the xz format (AES256CBC awaits the user's ruling, see its
+section is done. No line is skipped: the six lines once marked blocked
+are done from the C++ source when reached (user ruling 2026-11-07). Next is the xz format (AES256CBC awaits the user's ruling, see its
 line), then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit

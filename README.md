@@ -22,9 +22,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 19 of 92; 64-bit lane 19 of 92**. Six lines (Deflate,
-Deflate64, BZip2, Cab, gzip, bzip2) have no public-domain source and
-are counted as blocked.
+**32-bit lane 19 of 92; 64-bit lane 19 of 92**.
 
 | Line (both lanes) | Proof                                                    |
 | ----------------- | -------------------------------------------------------- |

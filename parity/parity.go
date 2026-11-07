@@ -25,18 +25,12 @@ var Omitted = map[string]string{
 	"codec/RISCV": "omitted by the user on 2026-11-06",
 }
 
-// Blocked lists the lines whose only 7-Zip source is the LGPL C++ layer
-// (no public-domain C file exists for them), which the module does not
-// port. They count in the total and fail with this reason until the user
-// says what to do about them (reported 2026-11-06, no decision yet).
-var Blocked = map[string]string{
-	"codec/Deflate":   "blocked: LGPL-only source",
-	"codec/Deflate64": "blocked: LGPL-only source",
-	"codec/BZip2":     "blocked: LGPL-only source",
-	"format/Cab":      "blocked: LGPL-only source",
-	"format/gzip":     "blocked: LGPL-only source (needs Deflate)",
-	"format/bzip2":    "blocked: LGPL-only source (needs BZip2)",
-}
+// Blocked lists lines that fail for a reason other than missing work.
+// Empty since 2026-11-07: the user ruled that all 12 lines 7za adds
+// count ("all 12"), including Deflate, Deflate64, BZip2, Cab, gzip and
+// bzip2, whose only 7-Zip source is the C++ layer; they are ordinary
+// not-done lines.
+var Blocked = map[string]string{}
 
 // Fixtures returns the two fixture file names of a lane: the output of
 // "7za i" and of "7za" with no arguments.
