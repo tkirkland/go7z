@@ -434,6 +434,7 @@ func SevenZCases(exe []byte) []SevenZCase {
 	bcj2("bcj2_ahead_solid", aheadTree, []string{"ah"}, []string{"-mf=BCJ2"}, sevenzip.Options{})
 	bcj2("bcj2_ahead_ms_off", aheadTree, []string{"ah"}, []string{"-mf=BCJ2", "-ms=off"}, sevenzip.Options{SolidOff: true})
 	bcj2("bcj2_ahead_only", aheadTree, []string{"ah"}, []string{"-m0=BCJ2"}, sevenzip.Options{Method: sevenzip.None})
+	cases = append(cases, AutoCases(exe)...)
 	return cases
 }
 

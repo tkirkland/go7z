@@ -38,3 +38,25 @@ func TestSoT7zAES(t *testing.T) {
 		})
 	}
 }
+
+// TestSoT7zAuto is the proof for the default filter automation
+// (-mf=on, -myx): the module's archives are byte-identical to each
+// lane's for executables of every kind the SoT recognises, at every
+// level and analysis level, and with LZMA, PPMd and Copy behind the
+// automatic filters. The cases are also part of format/7z.
+func TestSoT7zAuto(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			exe := sottest.SoTExe(t, root, lane)
+			for _, c := range sottest.AutoCases(exe) {
+				c := c
+				t.Run(c.Name, func(t *testing.T) {
+					t.Parallel()
+					sottest.CheckSevenZ(t, root, lane, t.TempDir(), c)
+				})
+			}
+		})
+	}
+}

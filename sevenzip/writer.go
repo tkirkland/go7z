@@ -94,7 +94,13 @@ type Options struct {
 	// means the level's default (ppmd.go).
 	PPMdOrder int
 	PPMdMem   uint32
-	Level     int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
+	// NoAutoFilter is -mf=off. By default (as the SoT's -mf=on) files
+	// that look like executables get a branch filter chosen by
+	// analysis (analyze.go) when Filter is NoFilter. Analysis is -myx:
+	// 0 means the default level (5); AnalysisNone is -myx0.
+	NoAutoFilter bool
+	Analysis     int
+	Level        int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
 
 	// LZMAProps / LZMA2Props override the level defaults for the data
 	// coder. Level and ReduceSize are set by the writer.
@@ -135,6 +141,7 @@ type item struct {
 	ctime  uint64
 	atime  uint64
 	crc    uint32
+	kind   exeKind // analysis result (analyze.go); exeNone unless -mf=on applies
 }
 
 // Writer collects items and writes the archive.
@@ -330,9 +337,10 @@ type folderPlan struct {
 	packSize    uint64 // total of packSizes
 	coderID     uint32 // main coder; MethodCopy when the filter stands alone (not written then)
 	coderProps  []byte
-	filterID    uint32 // 0 = no filter; otherwise the second coder, bound to the first
-	filterProps []byte // the filter coder's properties (Delta: one byte, distance-1)
-	noCoder     bool   // Method None: the filter is the only coder
+	filterID    uint32  // 0 = no filter; otherwise the second coder, bound to the first
+	filterProps []byte  // the filter coder's properties (Delta: one byte, distance-1)
+	noCoder     bool    // Method None: the filter is the only coder
+	kind        exeKind // the automatic filter's kind (sets lc/lp for LZMA), exeNone when forced or none
 
 	// BCJ2 folders have four pack streams, in stored order (packSizes),
 	// LZMA side coders (sideProps) and one unpack size per coder.
@@ -400,13 +408,6 @@ func (p *folderPlan) packStreamCount() int {
 // header, which is written last.
 func (w *Writer) Write(out io.WriteSeeker) error {
 	items := append([]item(nil), w.items...)
-	sort.SliceStable(items, func(i, j int) bool {
-		gi, gj := items[i].group(), items[j].group()
-		if gi != gj {
-			return gi < gj
-		}
-		return nameLess(items[i].name, items[j].name)
-	})
 
 	method := w.opts.Method
 	if w.opts.Level == LevelStore && method == LZMA2 {
@@ -414,6 +415,44 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		// behind a filter: -mf=BCJ -mx0 gives BCJ + Copy).
 		method = Copy
 	}
+
+	// Automatic filters (-mf=on, analyze.go): with no forced filter and
+	// a level above 0, every data file whose name the analysis level
+	// selects is inspected and gets its kind; items are then grouped by
+	// kind.
+	auto := w.opts.Filter == NoFilter && !w.opts.NoAutoFilter && method != None && w.level() > 0
+	analysis := w.opts.Analysis
+	if analysis == 0 {
+		analysis = AnalysisDefault
+	}
+	if auto && analysis > 0 {
+		for i := range items {
+			it := &items[i]
+			if it.group() != 2 || !analysisWanted(it.name, analysis) {
+				continue
+			}
+			k, err := analyzeFile(it.path, it.size)
+			if err != nil {
+				return err
+			}
+			if k.omittedConverter() {
+				return fmt.Errorf("sevenzip: %s is a PPC, SPARC or IA64 image; the SoT applies a converter this module omits", it.path)
+			}
+			it.kind = k
+		}
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		gi, gj := items[i].group(), items[j].group()
+		if gi != gj {
+			return gi < gj
+		}
+		if items[i].kind != items[j].kind {
+			return items[i].kind < items[j].kind
+		}
+		return nameLess(items[i].name, items[j].name)
+	})
+
 	var filterID uint32
 	var filterProps []byte
 	switch w.opts.Filter {
@@ -474,15 +513,20 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		if items[i].group() != 2 {
 			continue
 		}
+		kind := items[i].kind
 		if solid && len(plans) > 0 {
 			last := &plans[len(plans)-1]
-			if last.unpackSize+items[i].size <= limit {
+			if last.kind == kind && last.unpackSize+items[i].size <= limit {
 				last.items = append(last.items, i)
 				last.unpackSize += items[i].size
 				continue
 			}
 		}
-		plans = append(plans, folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, filterProps: filterProps, noCoder: method == None})
+		p := folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, filterProps: filterProps, noCoder: method == None, kind: kind}
+		if kind != exeNone {
+			p.filterID, _ = kindFilter(kind, w.level())
+		}
+		plans = append(plans, p)
 	}
 
 	// Start header placeholder.
@@ -583,6 +627,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		case LZMA:
 			props, _ := w.lzmaProps()
 			props.ReduceSize = dataTotal
+			applyKindProps(p.kind, &props)
 			enc := lzma.NewEncoder()
 			if err = enc.SetProps(&props); err != nil {
 				return err
@@ -594,6 +639,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		case LZMA2:
 			props, _ := w.lzma2Props()
 			props.LzmaProps.ReduceSize = dataTotal
+			applyKindProps(p.kind, &props.LzmaProps)
 			enc := lzma.NewLzma2Encoder()
 			if err = enc.SetProps(&props); err != nil {
 				return err
