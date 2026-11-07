@@ -7,3 +7,4 @@
 *.lzma binary
 *.exe binary
 *.bin binary
+testdata/parity/*.txt -text
