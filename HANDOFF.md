@@ -162,8 +162,10 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. `parity.Blocked` is empty
   (the user ruled 2026-11-07 that no line is blocked). Current baseline
-  (after `07ac99b`): **32-bit lane 19 of 92; 64-bit lane 19 of 92**
-  (13 codecs, 5 hashers and format/7z; both against `7za`, large inputs
+  (after the AES256CBC commit): **32-bit lane 20 of 92; 64-bit lane 20 of 92**
+  (the last full run, after `07ac99b`, gave 19 per lane; AES256CBC was
+  then proven by its own run, `-run TestParity/(32|64)/codec/AES256CBC`)
+  (14 codecs, 5 hashers and format/7z; both against `7za`, large inputs
   included). A full run takes about 14 minutes for the
   small matrices plus the large cases (below).
 - `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
@@ -190,7 +192,9 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `sevenzip/analyze.go`, -mf=on, -myx), `69bbbe5` (-myv,
   `Options.CompatVersion`), `c1b86cb` (docs), `df7fa9c` (docs, rule 9),
   `07ac99b` (fix of the 7zAES -mf=off test case), `8a2ec67` (docs, the
-  user's "all 12" ruling), then this handoff revision.
+  user's "all 12" ruling), `543683a` (docs), then the AES256CBC commit
+  (`sevenzip.MethodAES256CBC`, `internal/sottest/aes256cbc.go`,
+  `parity/codec_aes256cbc_test.go`, this handoff revision).
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
@@ -784,9 +788,9 @@ notice for them when they land. Sources per line:
 | 7zAES                         | `sevenzip/aes.go`: stdlib AES and SHA-256; |
 |                               | properties, key derivation, padding and    |
 |                               | folder placement observed on both SoTs     |
-| AES256CBC                     | `C/Aes.c`; `-m0=AES256CBC` is rejected by  |
-|                               | both SoTs in 7z, zip and xz (observed      |
-|                               | 2026-11-07); needs the user's ruling       |
+| AES256CBC                     | `CPP/7zip/Crypto/MyAesReg.cpp` (id         |
+|                               | 6F00181); both SoTs refuse it, observed;   |
+|                               | 1:1 refusal (user ruling 2026-11-07)       |
 | xz format                     | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`,        |
 |                               | `C/XzIn.c`, `C/XzCrc64.c`                  |
 | lzma, lzma86 formats          | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the   |
@@ -880,16 +884,26 @@ box is ticked only when both lanes are done.
 - [x] 7zAES: 32 done: `TestSoT7zAES/32` (parity key `codec/7zAES`, the
       criterion of the "What parity means" section: identical given the
       SoT's IVs, cross-extraction both ways); 64 done: `TestSoT7zAES/64`
-- [ ] AES256CBC: 32 not done; 64 not done. Observed 2026-11-07 on both
-      SoTs: `-m0=AES256CBC` (and `-m1=`) is rejected in 7z, zip and xz
-      ("The parameter is incorrect"); the codec is reachable only as
-      zip's `-pX -mem=AES256`, which `l -slt` reports as `AES-256` (the
-      WinZip scheme). There is no CLI situation in which the SoT writes
-      or reads an AES256CBC coder record, so the line has no
-      byte-level criterion of its own; it is proven, if at all, inside
-      the zip format line. Needs the user's ruling. Former text:
-      (`-m0=AES256CBC` as a coder; same cipher as 7zAES
-      without key derivation): 32 not done; 64 not done
+- [x] AES256CBC: 32 done: `TestParity/32/codec/AES256CBC` (parity key
+      `codec/AES256CBC`, `internal/sottest/aes256cbc.go`); 64 done:
+      `TestParity/64/codec/AES256CBC`. User ruling 2026-11-07: 7za is
+      the SoT, so what it refuses the module refuses (1:1). Observed on
+      both SoTs: `a` with `-m0=AES256CBC`, `-m1=`, `-mf=`, with `-p`, and
+      zip `-m0=` or `-mm=` fail with exit 2 "Not implemented"; xz
+      `-m0=` fails with exit 2 "The parameter is incorrect."; no archive
+      is left. A 7z folder holding the coder (id 6F00181) is listed
+      (`l -slt`: "Method = Copy AES256CBC") but `t` fails with
+      "Unsupported Method", with or without a password. The module has
+      no Method or Filter that writes it (checked over every
+      Method x Filter, with and without `-p`), opens such an archive,
+      reports the coder (`sevenzip.MethodAES256CBC`) and returns
+      `ErrUnsupported` on extraction; the SoT and the module agree on
+      both the SoT's and the module's archive. Correction of the former
+      text: zip `-mem=AES256` is WinZip AES, CTR mode (`WzAes.cpp`), not
+      this codec; the CBC code is reused by 7zAES and by the zip line's
+      PKWARE strong-encryption reader (`ZipStrong.cpp`), and `7za b`
+      lists it in its benchmark table (`Bench.cpp`; the Commands `b`
+      line).
 - [x] PPMD: 32 done: `TestEncodeSoTPPMD/32` (parity key `codec/PPMD`;
       container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTPPMD/64`
 - [ ] Deflate (`CPP/7zip/Compress/DeflateEncoder.cpp`, `DeflateDecoder.cpp`): 32
@@ -1024,9 +1038,9 @@ automation sections are done. No line is skipped: the six lines once
 marked blocked (Deflate, Deflate64, BZip2, Cab, gzip, bzip2) are done
 from the C++ source when reached (user ruling 2026-11-07).
 
-The first not-done line is AES256CBC in the Codecs section. It needs the
-user's ruling before any work on it (see its line); ask for the ruling,
-do not decide it. After it come Deflate, Deflate64 and BZip2, then the
+The first not-done line is Deflate in the Codecs section (from the C++
+source, `CPP/7zip/Compress/DeflateEncoder.cpp`, `DeflateDecoder.cpp`).
+After it come Deflate64 and BZip2, then the
 Formats section from xz down, then Commands, then Switches. Each line
 is done in both lanes before the next line: port the source faithfully
 (the public-domain `C/` file, or the C++ layer where that is the only

@@ -51,6 +51,14 @@ const (
 	MethodSwap2 uint32 = 0x020302 // observed: coder record 03 02 03 02, no properties
 	MethodSwap4 uint32 = 0x020304 // observed: coder record 03 02 03 04, no properties
 	MethodAES   uint32 = 0x06F10701
+	// MethodAES256CBC is the raw AES256CBC codec of 7za i (MyAesReg.cpp,
+	// id 6F00181). Observed in both lanes: 7za refuses to write it (7z
+	// and zip: "Not implemented", xz: "The parameter is incorrect") and
+	// lists a folder holding it ("Method = Copy AES256CBC") but extracts
+	// it as "Unsupported Method" with or without a password. The module
+	// matches: no Method or Filter writes it, and the reader returns
+	// ErrUnsupported for it.
+	MethodAES256CBC uint32 = 0x06F00181
 )
 
 var signature = [6]byte{'7', 'z', 0xBC, 0xAF, 0x27, 0x1C}

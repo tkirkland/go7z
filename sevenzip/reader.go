@@ -1155,6 +1155,10 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 			return nil, ErrPassword
 		}
 		return aesDecrypt(c.props, d.a.password, in, outSize)
+	case MethodAES256CBC:
+		// The SoT has no key source for the raw codec in a 7z folder:
+		// "Unsupported Method", with or without a password (number.go).
+		return nil, ErrUnsupported
 	case MethodPPMD:
 		// 7zDec.c SzDecodePpmd: 5-byte properties (order, memory), the
 		// range coder must finish on Code == 0 with the input consumed.

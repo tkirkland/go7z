@@ -21,7 +21,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 19 of 92; 64-bit lane 19 of 92**.
+**32-bit lane 20 of 92; 64-bit lane 20 of 92**.
 
 | Line (both lanes) | Proof                                                    |
 | ----------------- | -------------------------------------------------------- |
@@ -37,6 +37,7 @@ SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
 | codec/Swap4       | `bra`: four-byte reverse, 32 cases identical             |
 | codec/Delta       | `bra`: Delta filter, 194 cases identical                 |
 | codec/7zAES       | `sevenzip`: 49 archives identical given the SoT's IVs    |
+| codec/AES256CBC   | `sevenzip`: refused 1:1 with the SoT (user ruling)       |
 | codec/PPMD        | `ppmd`: encoder and decoder, 46 cases identical          |
 | hasher/CRC32      | `hasher`: h report identical, 21 cases x 3 forms         |
 | hasher/CRC64      | `hasher`: h report identical, 21 cases                   |
@@ -48,7 +49,7 @@ SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
 The 327 archives of format/7z include 53 cases of the automatic filter
 selection (-mf=on, -myx, -myv), which has no scoreboard line of its own.
 
-Everything else is not done: the AES256CBC, Deflate, Deflate64 and BZip2
+Everything else is not done: the Deflate, Deflate64 and BZip2
 codecs, every format other than 7z (xz, lzma, lzma86, split volumes,
 hash, tar, zip, zstd, Cab, gzip, bzip2), the CLI commands and the
 switches. See `HANDOFF.md` for the full checklist and the order of work.
