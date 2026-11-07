@@ -198,23 +198,39 @@ func analyzeExe(head []byte, size uint64) exeKind {
 	return exeNone
 }
 
-// kindFilter is the filter coder for a kind at a level (x86: BCJ up to
-// mx7, BCJ2 from mx8).
-func kindFilter(k exeKind, level int) (filterID uint32, filter Filter) {
+// CompatDefault stands for the SoT's default -myv (the emulated 7-Zip
+// version, MMNN): observed to behave like 2300..2401, that is with the
+// ARM64 filter and without the RISC-V filter.
+const CompatDefault = 2300
+
+// kindFilter is the filter coder for a kind at a level and emulated
+// version (x86: BCJ up to mx7, BCJ2 from mx8; ARM64 only from -myv=2300,
+// RISC-V only from -myv=2402, observed; an older version keeps the
+// group and its lc/lp but applies no filter). omitted is true when the
+// SoT would apply a converter this module does not have.
+func kindFilter(k exeKind, level int, version int) (filterID uint32, filter Filter, omitted bool) {
 	switch k {
 	case exeX86:
 		if level >= 8 {
-			return MethodBCJ2, BCJ2
+			return MethodBCJ2, BCJ2, false
 		}
-		return MethodBCJ, BCJ
+		return MethodBCJ, BCJ, false
 	case exeARM64:
-		return MethodARM64, ARM64
+		if version >= 2300 {
+			return MethodARM64, ARM64, false
+		}
+	case exeRISCV:
+		if version >= 2402 {
+			return 0, NoFilter, true
+		}
 	case exeARM:
-		return MethodARM, ARM
+		return MethodARM, ARM, false
 	case exeARMT:
-		return MethodARMT, ARMT
+		return MethodARMT, ARMT, false
+	case exePPC, exeSPARC, exeIA64:
+		return 0, NoFilter, true
 	}
-	return 0, NoFilter
+	return 0, NoFilter, false
 }
 
 // kindLcLpPb is the LZMA lc/lp/pb the SoT uses with an automatically

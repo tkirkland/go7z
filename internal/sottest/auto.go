@@ -119,6 +119,21 @@ func AutoCases(exe []byte) []SevenZCase {
 	add("tree_ms_300k", all, []string{"t"}, []string{"-ms=300k"}, sevenzip.Options{SolidSize: 300 << 10})
 	add("tree_hc_off", all, []string{"t"}, []string{"-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
 	add("tree_pw", all, []string{"t"}, []string{"-pTest"}, sevenzip.Options{Password: "Test"})
+	// -myv: the emulated version; 2209 has no ARM64 filter, 2300 is the
+	// default's behaviour, 2402 and later apply the RISC-V filter (omitted
+	// here, so that tree has no RISC-V image).
+	add("tree_myv2209", all, []string{"t"}, []string{"-myv=2209"}, sevenzip.Options{CompatVersion: 2209})
+	add("tree_myv900_lzma", all, []string{"t"}, []string{"-myv=900", "-m0=LZMA"}, sevenzip.Options{CompatVersion: 900, Method: sevenzip.LZMA})
+	add("tree_myv2300", all, []string{"t"}, []string{"-myv=2300"}, sevenzip.Options{CompatVersion: 2300})
+	add("tree_myv2401", all, []string{"t"}, []string{"-myv=2401"}, sevenzip.Options{CompatVersion: 2401})
+	var noRiscv []TreeFile
+	for _, f := range all {
+		if f.Name != "t/n2.exe" && f.Name != "t/n3.so" {
+			noRiscv = append(noRiscv, f)
+		}
+	}
+	add("tree_myv2402", noRiscv, []string{"t"}, []string{"-myv=2402"}, sevenzip.Options{CompatVersion: 2402})
+	add("tree_myv2605_mx9", noRiscv, []string{"t"}, []string{"-myv=2605", "-mx=9"}, sevenzip.Options{CompatVersion: 2605, Level: 9})
 	add("tree_pw_mhe_mx9", all, []string{"t"}, []string{"-pTest", "-mhe", "-mx=9"}, sevenzip.Options{Password: "Test", EncryptHeader: true, Level: 9})
 
 	// Size thresholds: PE needs 512 bytes from e_lfanew, ELF and Mach-O

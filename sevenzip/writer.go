@@ -100,7 +100,12 @@ type Options struct {
 	// 0 means the default level (5); AnalysisNone is -myx0.
 	NoAutoFilter bool
 	Analysis     int
-	Level        int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
+	// CompatVersion is -myv (the emulated 7-Zip version as MMNN, e.g.
+	// 2300); 0 means the SoT's default (CompatDefault). Observed: the
+	// ARM64 filter applies from 2300 and the RISC-V filter from 2402
+	// (which this module omits).
+	CompatVersion int
+	Level         int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
 
 	// LZMAProps / LZMA2Props override the level defaults for the data
 	// coder. Level and ReduceSize are set by the writer.
@@ -421,6 +426,10 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	// selects is inspected and gets its kind; items are then grouped by
 	// kind.
 	auto := w.opts.Filter == NoFilter && !w.opts.NoAutoFilter && method != None && w.level() > 0
+	compat := w.opts.CompatVersion
+	if compat == 0 {
+		compat = CompatDefault
+	}
 	analysis := w.opts.Analysis
 	if analysis == 0 {
 		analysis = AnalysisDefault
@@ -435,8 +444,8 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			if err != nil {
 				return err
 			}
-			if k.omittedConverter() {
-				return fmt.Errorf("sevenzip: %s is a PPC, SPARC or IA64 image; the SoT applies a converter this module omits", it.path)
+			if _, _, omitted := kindFilter(k, w.level(), compat); omitted {
+				return fmt.Errorf("sevenzip: %s: the SoT applies a converter this module omits (PPC, SPARC, IA64, or RISC-V from -myv=2402)", it.path)
 			}
 			it.kind = k
 		}
@@ -524,7 +533,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		}
 		p := folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, filterProps: filterProps, noCoder: method == None, kind: kind}
 		if kind != exeNone {
-			p.filterID, _ = kindFilter(kind, w.level())
+			p.filterID, _, _ = kindFilter(kind, w.level(), compat)
 		}
 		plans = append(plans, p)
 	}
