@@ -346,6 +346,49 @@ func SevenZCases(exe []byte) []SevenZCase {
 	delta("tree_copy_ms_off", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
 	delta("pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=Delta"}, sevenzip.Options{})
 	delta("mixed", mixed, mixedInputs, []string{"-mf=Delta"}, sevenzip.Options{})
+	// PPMd method: levels, explicit order and memory, trees solid and
+	// not (the memory reduction follows the solid total or the largest
+	// file), -mhc=off, the solid limit (64k memory gives 16 MB blocks),
+	// and PPMd behind BCJ and BCJ2.
+	ppmdOne := []TreeFile{{"in/p.bin", exe[:300000]}}
+	ppmdTree := []TreeFile{
+		{"p/a.bin", exe[:100001]},
+		{"p/b.txt", TextLike(200003)},
+		{"p/c.bin", DeterministicData(2002)},
+		{"p/empty.bin", nil},
+		{"p/dir/", nil},
+	}
+	ppmdBig := []TreeFile{
+		{"pb/a.bin", DeterministicData(5 << 20)},
+		{"pb/b.bin", DeterministicData(6 << 20)},
+		{"pb/c.bin", DeterministicData(7 << 20)},
+		{"pb/d.bin", DeterministicData(1 << 20)},
+	}
+	pp := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Method = sevenzip.PPMd
+		add("ppmd_"+name, files, inputs, args, opts)
+	}
+	pp("one", ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd"}, sevenzip.Options{})
+	pp("one_hc_off", ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	for mx := 0; mx <= 9; mx++ {
+		pp(fmt.Sprintf("one_mx%d", mx), ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd", fmt.Sprintf("-mx=%d", mx)}, sevenzip.Options{Level: levelOpt(mx)})
+	}
+	pp("one_o2", ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd:o=2"}, sevenzip.Options{PPMdOrder: 2})
+	pp("one_o32_mem1g", ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd:o=32:mem=1g"}, sevenzip.Options{PPMdOrder: 32, PPMdMem: 1 << 30})
+	pp("one_mem64k", ppmdOne, []string{"in/p.bin"}, []string{"-m0=PPMd:mem=64k"}, sevenzip.Options{PPMdMem: 1 << 16})
+	pp("tree", ppmdTree, []string{"p"}, []string{"-m0=PPMd"}, sevenzip.Options{})
+	pp("tree_mx9", ppmdTree, []string{"p"}, []string{"-m0=PPMd", "-mx=9"}, sevenzip.Options{Level: 9})
+	pp("tree_ms_off", ppmdTree, []string{"p"}, []string{"-m0=PPMd", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	pp("tree_ms_150k", ppmdTree, []string{"p"}, []string{"-m0=PPMd", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	pp("tree_hc_off", ppmdTree, []string{"p"}, []string{"-m0=PPMd", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	pp("big", ppmdBig, []string{"pb"}, []string{"-m0=PPMd"}, sevenzip.Options{})
+	pp("big_mem64k", ppmdBig, []string{"pb"}, []string{"-m0=PPMd:mem=64k"}, sevenzip.Options{PPMdMem: 1 << 16})
+	pp("big_mem64k_ms_off", ppmdBig, []string{"pb"}, []string{"-m0=PPMd:mem=64k", "-ms=off"}, sevenzip.Options{PPMdMem: 1 << 16, SolidOff: true})
+	pp("big_mx9", ppmdBig, []string{"pb"}, []string{"-m0=PPMd", "-mx=9"}, sevenzip.Options{Level: 9})
+	pp("pe_bcj", peTree, []string{"pe"}, []string{"-mf=BCJ", "-m0=PPMd"}, sevenzip.Options{Filter: sevenzip.BCJ})
+	pp("pe_bcj2", peTree, []string{"pe"}, []string{"-mf=BCJ2", "-m0=PPMd"}, sevenzip.Options{Filter: sevenzip.BCJ2})
+	pp("pe_delta", peTree, []string{"pe"}, []string{"-mf=Delta:4", "-m0=PPMd"}, sevenzip.Options{Filter: sevenzip.Delta, DeltaDistance: 4})
+	pp("mixed", mixed, mixedInputs, []string{"-m0=PPMd"}, sevenzip.Options{})
 	// BCJ2: alone (-m0=BCJ2), forced with -mf=BCJ2 in front of each
 	// method and level (the four-coder folder with the LZMA side
 	// streams), the same trees as BCJ, and a tree whose files hold calls
@@ -422,4 +465,12 @@ func RunSevenZMatrix(t *testing.T, root string, lane sot.Lane) {
 			})
 		}
 	}
+}
+
+// levelOpt maps an -mx value to Options.Level (0 is LevelStore).
+func levelOpt(mx int) int {
+	if mx == 0 {
+		return sevenzip.LevelStore
+	}
+	return mx
 }

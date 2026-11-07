@@ -47,6 +47,7 @@ const (
 	MethodARM64 uint32 = 0x0A
 	MethodRISCV uint32 = 0x0B
 	MethodDelta uint32 = 0x03
+	MethodPPMD  uint32 = 0x030401 // observed: coder record 23 03 04 01 05 <order> <mem LE32>
 	MethodSwap2 uint32 = 0x020302 // observed: coder record 03 02 03 02, no properties
 	MethodSwap4 uint32 = 0x020304 // observed: coder record 03 02 03 04, no properties
 	MethodAES   uint32 = 0x06F10701

@@ -7,6 +7,7 @@ import (
 
 	"github.com/tkirkland/go7z/bra"
 	"github.com/tkirkland/go7z/lzma"
+	"github.com/tkirkland/go7z/ppmd"
 )
 
 // Port of C/7zArcIn.c and C/7zDec.c (26.05, public domain): the 7z
@@ -1154,6 +1155,25 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 			return nil, ErrPassword
 		}
 		return aesDecrypt(c.props, d.a.password, in, outSize)
+	case MethodPPMD:
+		// 7zDec.c SzDecodePpmd: 5-byte properties (order, memory), the
+		// range coder must finish on Code == 0 with the input consumed.
+		if len(c.props) != 5 {
+			return nil, ErrUnsupported
+		}
+		order := uint32(c.props[0])
+		mem := getUi32(c.props[1:])
+		if order < ppmd.MinOrder || order > ppmd.MaxOrder || mem < ppmd.MinMemSize || mem > ppmd.MaxMemSize {
+			return nil, ErrUnsupported
+		}
+		if uint64(int(outSize)) != outSize {
+			return nil, ErrUnsupported
+		}
+		res, err := ppmd.DecodeBytes(in, order, mem, int(outSize))
+		if err != nil {
+			return nil, ErrData
+		}
+		return res, nil
 	case MethodCopy:
 		if inSize != outSize {
 			return nil, ErrData

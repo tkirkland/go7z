@@ -17,6 +17,7 @@ import (
 
 	"github.com/tkirkland/go7z/bra"
 	"github.com/tkirkland/go7z/lzma"
+	"github.com/tkirkland/go7z/ppmd"
 )
 
 // The 7z writer. There is no public-domain SDK source for writing 7z
@@ -36,6 +37,10 @@ const (
 	// with no -m1 (observed: the folder's only coder is the filter).
 	// It requires a Filter.
 	None
+	// PPMd is the PPMD method (ppmd package, Ppmd7z); order and memory
+	// follow the level unless Options.PPMdOrder / PPMdMem are set (see
+	// ppmd.go for the observed rules).
+	PPMd
 )
 
 // Filter selects the branch converter placed in front of the coder
@@ -85,7 +90,11 @@ type Options struct {
 	// DeltaDistance is the Delta filter's distance, 1..256; 0 means the
 	// SoT's default (1). Ignored for the other filters.
 	DeltaDistance int
-	Level         int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
+	// PPMdOrder and PPMdMem are -m0=PPMd:o=N:mem=M for Method PPMd; 0
+	// means the level's default (ppmd.go).
+	PPMdOrder int
+	PPMdMem   uint32
+	Level     int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
 
 	// LZMAProps / LZMA2Props override the level defaults for the data
 	// coder. Level and ReduceSize are set by the writer.
@@ -452,6 +461,10 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	case LZMA2:
 		_, dict := w.lzma2Props()
 		limit = solidSize(LZMA2, dict)
+	case PPMd:
+		// Observed: the LZMA rule on the PPMd memory (ppmd.go).
+		_, mem := w.ppmdParams()
+		limit = solidSize(LZMA, mem)
 	}
 	if w.opts.SolidSize != 0 {
 		limit = w.opts.SolidSize
@@ -587,6 +600,15 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			}
 			enc.SetDataSize(p.unpackSize)
 			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
+			err = enc.Encode(dst, src)
+		case PPMd:
+			order, mem := w.ppmdParams()
+			mem = PPMdReducedMem(mem, dataTotal)
+			var enc *ppmd.Encoder
+			if enc, err = ppmd.NewEncoder(order, mem); err != nil {
+				return err
+			}
+			p.coderID, p.coderProps = MethodPPMD, ppmdProps(order, mem)
 			err = enc.Encode(dst, src)
 		}
 		if err != nil {
@@ -788,6 +810,14 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 		enc := lzma.NewLzma2Encoder()
 		if err = enc.SetProps(&props); err == nil {
 			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
+			err = enc.Encode(mainOut, mainIn)
+		}
+	case PPMd:
+		order, mem := w.ppmdParams()
+		mem = PPMdReducedMem(mem, dataTotal)
+		var enc *ppmd.Encoder
+		if enc, err = ppmd.NewEncoder(order, mem); err == nil {
+			p.coderID, p.coderProps = MethodPPMD, ppmdProps(order, mem)
 			err = enc.Encode(mainOut, mainIn)
 		}
 	default:
