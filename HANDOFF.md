@@ -543,6 +543,43 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   Not covered (the `h` command and switch lines): -r, wildcards, -i/-x,
   absolute paths (printed as the file name only), -ba, -bb, hashing of
   stdin, error paths.
+- `sevenzip/analyze.go` (filter automation, -mf=on, -myx, -myv): the
+  LGPL 7zUpdate.cpp analysis reproduced from observation on both SoTs
+  (2026-11-07, do not re-derive). Proof: `TestSoT7zAuto` (53 cases per
+  lane, also in `TestSoT7z`): a tree of real and patched PE images,
+  ELF and Mach-O headers, random and undersized executables, every
+  extension form, at -mx0..9, -myx0..9, -myv, with LZMA, PPMd and
+  Copy, -ms=off, -ms=300k, -mhc=off, -p and -mhe.
+  1. Analysed names by -myx (default 5): 0..4 none; 5, 6 the extensions
+     exe, dll, sys, ocx, dylib, so (case-insensitive; also x.so.1 and
+     x.so.1.2.3, not x.so.abc, not x.dll.1); 7, 8 also names with no
+     extension; 9 every file. Files under 512 bytes are never analysed.
+  2. PE: MZ, e_lfanew at 0x3C, PE  stdin, error paths.  stdin, error paths., and the file must hold 512
+     bytes from e_lfanew (x64 SoT binary: 744 bytes, x86: 784).
+     Machine 014C/8664 x86, 01C0/01C2 ARM, 01C4 ARMT, AA64 ARM64, 0200
+     IA64, 5032/5064 RISC-V; PPC (01F0), 5128, EBC, MIPS16, 0 none.
+     ELF: class 1/2, data 1/2, EI_VERSION 1, any e_type; machine 3/3E
+     x86 in either byte order; 28 ARM, B7 ARM64, F3 RISC-V only
+     little-endian; 14/15 PPC only big-endian; 2/2B SPARC either; 32
+     (IA64) none. Mach-O: little-endian FEEDFACE/FEEDFACF only; cputype
+     7/01000007 x86, C ARM, 0100000C ARM64; PPC and fat none.
+  3. x86 gets BCJ at -mx1..7 and BCJ2 at -mx8/9. -mx0 applies no
+     analysis; -m0=Copy at other levels does, one folder per file.
+  4. Groups and item order: directories, empty files, then data items
+     by kind in the order none, ARM64, RISC-V, x86, (PPC, SPARC, IA64 in
+     an unobserved order), ARM, ARMT, each group by name; each group has
+     its own solid blocks with the usual limit; the dictionary is
+     reduced by the total of all data as before.
+  5. LZMA/LZMA2 behind an automatic filter: ARM and ARM64 lc1 lp2, ARMT
+     and RISC-V lc2 lp1, IA64 lc0 lp4 pb4, x86 default. A forced filter
+     (-mf=X, -m0=X -m1=M) never changes lc/lp, so forced and automatic
+     ARM archives differ.
+  6. RISC-V images are grouped (with lc2 lp1) but filtered only from
+     -myv=2402; ARM64 only from -myv=2300; the default behaves like
+     2300..2401 (`CompatDefault`). -myv=23 and -myv=230000 are accepted,
+     -myv=abc is not. -myfa and -myfd are rejected.
+  7. -mf=on explicit equals the default; -myx=5 explicit equals the
+     default.
   one, and the module extracts the SoT's (`OpenWithPassword`,
   `SetPassword`, `HeaderCoders`; `ErrPassword` without one). The key
   derivation (0.3 s) is cached per password.
@@ -839,13 +876,23 @@ box is ticked only when both lanes are done.
 
 ### Filter automation (what `-mf` does by default)
 
-- [ ] `-mf=on` (default): executable detection by extension and by content
+- [x] `-mf=on` (default): executable detection by extension and by content
       (PE, ELF, Mach-O headers), filter choice per file, BCJ2 at the levels
-      7-Zip uses it, `-myx` analysis level: 32 not done; 64 not done
-- [ ] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ, BCJ2,
+      7-Zip uses it, `-myx` analysis level: 32 done: `TestSoT7zAuto/32`
+      (53 cases, also in `TestSoT7z` / parity `format/7z`); 64 done:
+      `TestSoT7zAuto/64`. Images needing the PPC, SPARC, IA64 or (from
+      -myv=2402) RISC-V converters the user omitted are refused by the
+      writer with an error rather than written differently.
+- [x] `-mf=<Filter>`: forced filter with LZMA2 behind it (BCJ, BCJ2,
       ARM and ARMT work in both lanes as `Options.Filter`; the line
-      needs every filter): 32 not done; 64 not done
-- [ ] `-myv`, `-myfa`, `-myfd`: 32 not done; 64 not done
+      needs every filter): 32 done: the `*_mf` container cases of
+      `TestSoT7z/32` for BCJ, BCJ2, ARM, ARMT, ARM64, Swap2, Swap4 and
+      Delta (PPC, IA64, SPARC, RISCV omitted); 64 done: `TestSoT7z/64`
+- [x] `-myv`: 32 done: `TestSoT7zAuto/32` (`Options.CompatVersion`;
+      -myv=900, 2209, 2300, 2401, 2402, 2605); 64 done: `TestSoT7zAuto/64`.
+      `-myfa` and `-myfd` (with or without a value) are rejected by both
+      SoTs ("System ERROR"), so they have no behaviour to reproduce beyond
+      the rejection, which is the CLI's (commands line).
 
 ### Formats (`7za i`, `-t`)
 
@@ -932,7 +979,7 @@ with their source situation.
 Top to bottom. No reordering by what seems important. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is the filter automation, `-mf=on` (AES256CBC awaits the user's ruling, see its
+lines after them. Next is the xz format (AES256CBC awaits the user's ruling, see its
 line), then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit

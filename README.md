@@ -95,7 +95,8 @@ for i, e := range a.Entries {
 ```
 
 `Options` covers the method (LZMA2, LZMA, Copy, or the filter alone),
-the BCJ, BCJ2, ARM, ARMT, ARM64, Swap2, Swap4 and Delta filters (with the
+the automatic filters (-mf=on, -myx, -myv) or a forced BCJ, BCJ2, ARM, ARMT,
+ARM64, Swap2, Swap4 or Delta filter (with the
 Delta distance), the 7zAES password and header encryption, level, solid mode
 and block size,
 header
