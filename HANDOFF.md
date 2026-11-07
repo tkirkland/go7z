@@ -171,9 +171,9 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `bra/`, container bonds), `c25250f`..`cb927d3` (two-lane harness,
   fixtures, docs), `d503515` (BCJ2: `bra/bcj2.go`, generic folder
   decoder, BCJ2 folders in the writer), `ca0a2c3` (docs), `c2536ee`
-  (ARM: `bra/bra.go`, `Options.Filter = ARM`), `5d01c8d` (docs), the
-  ARMT commit (`ARMTConvert` in `bra/bra.go`, `Options.Filter = ARMT`),
-  then this handoff revision.
+  (ARM: `bra/bra.go`, `Options.Filter = ARM`), `5d01c8d` (docs), `7b59af1`
+  (ARMT: `ARMTConvert` in `bra/bra.go`, `Options.Filter = ARMT`), then
+  this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
     `Lzma2DecodeOneShot`), `lzma86.go` (`DecodeLzma86`).
