@@ -97,6 +97,32 @@ func CheckSevenZ(t *testing.T, root string, lane sot.Lane, dir string, c SevenZC
 		t.Fatal(err)
 	}
 
+	// 7zAES: byte identity is possible only with the SoT's random IVs,
+	// so they are read out of its archive (each folder's 7zAES coders in
+	// record order, then the header's) and injected through
+	// Options.Random; the SoT then has to test the module's archive, and
+	// the module reads the SoT's with the password (below).
+	if c.Opts.Password != "" {
+		sa, err := sevenzip.OpenWithPassword(bytes.NewReader(want), int64(len(want)), c.Opts.Password)
+		if err != nil {
+			t.Fatalf("%s: module cannot open the SoT's encrypted archive: %v", c.Name, err)
+		}
+		var ivs []byte
+		for f := 0; f < sa.NumFolders(); f++ {
+			for _, co := range sa.FolderCoders(f) {
+				if co.MethodID == sevenzip.MethodAES {
+					ivs = append(ivs, co.Props[2:]...)
+				}
+			}
+		}
+		for _, co := range sa.HeaderCoders() {
+			if co.MethodID == sevenzip.MethodAES {
+				ivs = append(ivs, co.Props[2:]...)
+			}
+		}
+		c.Opts.Random = bytes.NewReader(ivs)
+	}
+
 	modulePath := filepath.Join(dir, "module.7z")
 	w := sevenzip.NewWriter(c.Opts)
 	for _, in := range c.Inputs {
@@ -121,8 +147,25 @@ func CheckSevenZ(t *testing.T, root string, lane sot.Lane, dir string, c SevenZC
 		t.Fatalf("%s: archive differs from SoT at byte %d (got %d bytes, want %d)\n%s", c.Name, i, len(got), len(want), describeDiff(got, want, i))
 	}
 
+	if c.Opts.Password != "" {
+		// The SoT tests the module's archive with the password (and
+		// refuses it with a wrong one).
+		if out, err := runSoTIn(root, lane, tree, "t", "-p"+c.Opts.Password, modulePath); err != nil {
+			t.Fatalf("%s: SoT cannot test the module's archive: %v\n%s", c.Name, err, out)
+		}
+		hasData := c.Opts.EncryptHeader
+		for _, tf := range c.Files {
+			if len(tf.Data) > 0 {
+				hasData = true
+			}
+		}
+		if _, err := runSoTIn(root, lane, tree, "t", "-p"+c.Opts.Password+"x", modulePath); err == nil && hasData {
+			t.Fatalf("%s: SoT accepted the module's archive with a wrong password", c.Name)
+		}
+	}
+
 	// Read the SoT's archive with the module.
-	a, err := sevenzip.Open(bytes.NewReader(want), int64(len(want)))
+	a, err := sevenzip.OpenWithPassword(bytes.NewReader(want), int64(len(want)), c.Opts.Password)
 	if err != nil {
 		t.Fatalf("%s: module cannot open the SoT's archive: %v", c.Name, err)
 	}

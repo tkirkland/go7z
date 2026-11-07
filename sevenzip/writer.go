@@ -2,6 +2,7 @@ package sevenzip
 
 import (
 	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"hash"
@@ -100,6 +101,18 @@ type Options struct {
 	StoreCTime          bool // -mtc=on
 	StoreATime          bool // -mta=on
 	NoMTime             bool // -mtm=off
+
+	// Password enables 7zAES (-p): every pack stream is encrypted with
+	// AES-256-CBC under a key derived from the password (see aes.go).
+	Password string
+	// EncryptHeader is -mhe: the header is compressed and encrypted too,
+	// so the file names need the password.
+	EncryptHeader bool
+	// Random supplies the 16-byte IVs, one per 7zAES coder in the order
+	// the coders are written (folder by folder, each folder's coders in
+	// record order, then the header's). nil means crypto/rand. Tests
+	// inject the SoT's IVs here to reproduce its bytes.
+	Random io.Reader
 }
 
 // item is one archive entry before writing.
@@ -317,6 +330,53 @@ type folderPlan struct {
 	packSizes  []uint64
 	sideProps  []byte
 	sideUnpack [3]uint64 // JUMP, CALL, MAIN stream sizes
+
+	// 7zAES: when encrypt is set, every pack stream is encrypted and the
+	// folder record gains one 7zAES coder per pack stream (coder j wraps
+	// stored pack stream k-1-j; see aes.go). aesIVs and aesUnpack are in
+	// coder order; packSize/packSizes are the padded sizes.
+	encrypt   bool
+	aesKey    [32]byte
+	aesIVs    [][aesBlock]byte
+	aesUnpack []uint64
+}
+
+// wrapPack returns the writer for stored pack stream i: an encrypting
+// writer when the folder is encrypted, w itself otherwise. close must
+// be called when the stream is complete; it pads the last block and
+// records the unpadded size as the 7zAES coder's unpack size.
+func (p *folderPlan) wrapPack(i int, w io.Writer) (io.Writer, func() error, error) {
+	if !p.encrypt {
+		return w, func() error { return nil }, nil
+	}
+	j := len(p.aesIVs) - 1 - i
+	aw, err := newAESWriter(w, p.aesKey, p.aesIVs[j])
+	if err != nil {
+		return nil, nil, err
+	}
+	return aw, func() error {
+		if err := aw.Close(); err != nil {
+			return err
+		}
+		p.aesUnpack[j] = aw.plain
+		return nil
+	}, nil
+}
+
+// prepareAES draws the folder's IVs (one per pack stream) from random
+// and sets the key.
+func (p *folderPlan) prepareAES(key [32]byte, random io.Reader) error {
+	k := p.packStreamCount()
+	p.encrypt = true
+	p.aesKey = key
+	p.aesIVs = make([][aesBlock]byte, k)
+	p.aesUnpack = make([]uint64, k)
+	for j := range p.aesIVs {
+		if _, err := io.ReadFull(random, p.aesIVs[j][:]); err != nil {
+			return fmt.Errorf("sevenzip: reading IV: %w", err)
+		}
+	}
+	return nil
 }
 
 // packStreamCount is how many pack streams the plan's folder has.
@@ -434,11 +494,27 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		}
 	}
 
+	// 7zAES: one key for the archive, IVs drawn per coder in writing
+	// order.
+	var key [32]byte
+	random := w.opts.Random
+	if w.opts.Password != "" {
+		key = aesKey(w.opts.Password, nil, aesDefaultCycles)
+		if random == nil {
+			random = rand.Reader
+		}
+	}
+
 	// Pack streams.
 	var packTotal uint64
 	for pi := range plans {
 		p := &plans[pi]
 		cw := &countWriter{w: out}
+		if w.opts.Password != "" {
+			if err := p.prepareAES(key, random); err != nil {
+				return err
+			}
+		}
 		fr := &folderReader{items: items, idx: p.items}
 		var src io.Reader = fr
 		switch p.filterID {
@@ -481,12 +557,16 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			packTotal += cw.n
 			continue
 		}
+		dst, closeDst, werr := p.wrapPack(0, cw)
+		if werr != nil {
+			return werr
+		}
 		switch method {
 		case None:
-			_, err = io.Copy(cw, src)
+			_, err = io.Copy(dst, src)
 		case Copy:
 			p.coderID = MethodCopy
-			_, err = io.Copy(cw, src)
+			_, err = io.Copy(dst, src)
 		case LZMA:
 			props, _ := w.lzmaProps()
 			props.ReduceSize = dataTotal
@@ -497,7 +577,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			enc.SetDataSize(p.unpackSize)
 			pr := enc.WriteProperties()
 			p.coderID, p.coderProps = MethodLZMA, pr[:]
-			err = enc.Encode(cw, src)
+			err = enc.Encode(dst, src)
 		case LZMA2:
 			props, _ := w.lzma2Props()
 			props.LzmaProps.ReduceSize = dataTotal
@@ -507,7 +587,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			}
 			enc.SetDataSize(p.unpackSize)
 			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
-			err = enc.Encode(cw, src)
+			err = enc.Encode(dst, src)
 		}
 		if err != nil {
 			return err
@@ -517,6 +597,9 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		}
 		if fr.total != p.unpackSize {
 			return fmt.Errorf("sevenzip: %s changed size while reading", items[p.items[len(p.items)-1]].path)
+		}
+		if err := closeDst(); err != nil {
+			return err
 		}
 		p.packSize = cw.n
 		packTotal += cw.n
@@ -528,12 +611,45 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 	// more items; the header coder is LZMA, dictionary 1 MB).
 	var nextHeader []byte
 	nextOffset := packTotal
-	if !w.opts.NoHeaderCompression && len(items) >= 2 {
-		packed, props, err := encodeHeader(header)
-		if err != nil {
-			return err
+	encryptHeader := w.opts.Password != "" && w.opts.EncryptHeader
+	compressHeader := !w.opts.NoHeaderCompression && len(items) >= 2
+	if compressHeader || encryptHeader {
+		// The header folder: LZMA when compressed, wrapped in 7zAES for
+		// -mhe (observed: coders 7zAES, LZMA; bond in-stream 1 from coder
+		// 0; unpack sizes the LZMA stream's length, then the header's).
+		// With -mhe but no compression (one item, or -mhc=off) the folder
+		// is 7zAES alone over the raw header (observed).
+		hs := folderShape{packs: []int{0}, unpack: []uint64{uint64(len(header))}}
+		stored := header
+		if compressHeader {
+			packed, props, err := encodeHeader(header)
+			if err != nil {
+				return err
+			}
+			hs.coders = []coderRec{{MethodLZMA, props[:], 1}}
+			stored = packed
 		}
-		if _, err := out.Write(packed); err != nil {
+		if encryptHeader {
+			packed := stored
+			var iv [aesBlock]byte
+			if _, err := io.ReadFull(random, iv[:]); err != nil {
+				return fmt.Errorf("sevenzip: reading IV: %w", err)
+			}
+			var enc bytes.Buffer
+			aw, err := newAESWriter(&enc, key, iv)
+			if err != nil {
+				return err
+			}
+			if _, err := aw.Write(packed); err != nil {
+				return err
+			}
+			if err := aw.Close(); err != nil {
+				return err
+			}
+			stored = enc.Bytes()
+			hs = hs.encrypted([][aesBlock]byte{iv}, []uint64{uint64(len(packed))})
+		}
+		if _, err := out.Write(stored); err != nil {
 			return err
 		}
 		var b []byte
@@ -541,19 +657,21 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		b = writeNumber(b, packTotal)
 		b = writeNumber(b, 1)
 		b = append(b, idSize)
-		b = writeNumber(b, uint64(len(packed)))
+		b = writeNumber(b, uint64(len(stored)))
 		b = append(b, idEnd)
 		b = append(b, idUnpackInfo, idFolder)
 		b = writeNumber(b, 1)
 		b = append(b, 0) // external
-		b = appendCoder(b, MethodLZMA, props[:])
+		b = appendShape(b, hs)
 		b = append(b, idCodersUnpackSize)
-		b = writeNumber(b, uint64(len(header)))
+		for _, u := range hs.unpack {
+			b = writeNumber(b, u)
+		}
 		b = append(b, idCRC, 1)
 		b = appendUi32(b, crc(header))
 		b = append(b, idEnd, idEnd)
 		nextHeader = b
-		nextOffset += uint64(len(packed))
+		nextOffset += uint64(len(stored))
 	} else {
 		nextHeader = header
 	}
@@ -646,11 +764,15 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 	go side(jumpR, &jumpPacked, &jumpN)
 
 	mainIn := &countReader{r: mainR}
-	var err error
+	mainOut, closeMain, err := p.wrapPack(0, out)
+	if err != nil {
+		mainR.CloseWithError(err)
+		return err
+	}
 	switch method {
 	case Copy:
 		p.coderID = MethodCopy
-		_, err = io.Copy(out, mainIn)
+		_, err = io.Copy(mainOut, mainIn)
 	case LZMA:
 		props, _ := w.lzmaProps()
 		props.ReduceSize = dataTotal
@@ -658,7 +780,7 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 		if err = enc.SetProps(&props); err == nil {
 			pr := enc.WriteProperties()
 			p.coderID, p.coderProps = MethodLZMA, pr[:]
-			err = enc.Encode(out, mainIn)
+			err = enc.Encode(mainOut, mainIn)
 		}
 	case LZMA2:
 		props, _ := w.lzma2Props()
@@ -666,7 +788,7 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 		enc := lzma.NewLzma2Encoder()
 		if err = enc.SetProps(&props); err == nil {
 			p.coderID, p.coderProps = MethodLZMA2, []byte{enc.WriteProperties()}
-			err = enc.Encode(out, mainIn)
+			err = enc.Encode(mainOut, mainIn)
 		}
 	default:
 		err = fmt.Errorf("sevenzip: method %d cannot stand behind BCJ2", method)
@@ -680,11 +802,24 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 	if err != nil {
 		return err
 	}
+	if err := closeMain(); err != nil {
+		return err
+	}
 	mainPacked := out.n
-	for _, b := range []*bytes.Buffer{&rc, &callPacked, &jumpPacked} {
-		if _, err := out.Write(b.Bytes()); err != nil {
+	sidePacked := make([]uint64, 3)
+	for i, b := range []*bytes.Buffer{&rc, &callPacked, &jumpPacked} {
+		start := out.n
+		sw, closeSide, err := p.wrapPack(i+1, out)
+		if err != nil {
 			return err
 		}
+		if _, err := sw.Write(b.Bytes()); err != nil {
+			return err
+		}
+		if err := closeSide(); err != nil {
+			return err
+		}
+		sidePacked[i] = out.n - start
 	}
 	pr := lzma.NewEncoder()
 	if err := pr.SetProps(&sideProps); err != nil {
@@ -693,7 +828,7 @@ func (w *Writer) encodeBCJ2Folder(p *folderPlan, src io.Reader, out *countWriter
 	sp := pr.WriteProperties()
 	p.sideProps = sp[:]
 	p.sideUnpack = [3]uint64{jumpN, callN, mainIn.n}
-	p.packSizes = []uint64{mainPacked, uint64(rc.Len()), uint64(callPacked.Len()), uint64(jumpPacked.Len())}
+	p.packSizes = []uint64{mainPacked, sidePacked[0], sidePacked[1], sidePacked[2]}
 	return nil
 }
 
@@ -715,10 +850,18 @@ func encodeBCJ2Only(p *folderPlan, src io.Reader, out *countWriter, fileSizes []
 	}
 	p.packSizes = make([]uint64, bra.Bcj2NumStreams)
 	for i := range bufs {
-		if _, err := out.Write(bufs[i].Bytes()); err != nil {
+		start := out.n
+		sw, closeStream, err := p.wrapPack(i, out)
+		if err != nil {
 			return err
 		}
-		p.packSizes[i] = uint64(bufs[i].Len())
+		if _, err := sw.Write(bufs[i].Bytes()); err != nil {
+			return err
+		}
+		if err := closeStream(); err != nil {
+			return err
+		}
+		p.packSizes[i] = out.n - start
 	}
 	return nil
 }
@@ -779,79 +922,137 @@ func appendCoder(b []byte, id uint32, props []byte) []byte {
 	return appendCoderRecord(b, id, props)
 }
 
-// appendFolder writes the folder record of a plan: the main coder, then
-// the filter coder bound to it (observed: coder order method, filter;
-// bond InIndex 1 OutIndex 0; the single pack stream is implicit), or
-// the filter alone for Method None. BCJ2 folders are appendBCJ2Folder.
-func appendFolder(b []byte, p *folderPlan) []byte {
+// coderRec is one coder of a folder record.
+type coderRec struct {
+	id    uint32
+	props []byte
+	numIn int // in-streams (1, or 4 for BCJ2)
+}
+
+// folderShape is a folder record before serialisation: the coders in
+// record order, the bonds (in-stream index from coder out index), the
+// pack streams (in-stream indices in stored order) and one unpack size
+// per coder.
+type folderShape struct {
+	coders []coderRec
+	bonds  [][2]int
+	packs  []int
+	unpack []uint64
+}
+
+// shape is the folder record of a plan (observed from the SoT):
+//   - one coder: the method, or the filter alone for Method None;
+//   - method + filter: coder order method, filter; bond in-stream 1
+//     from coder 0; the single pack stream implicit; both unpack sizes
+//     the folder size;
+//   - BCJ2 (-mf=BCJ2, the shape 7zDec.c accepts): coders LZMA (JUMP),
+//     LZMA (CALL), the method (MAIN), BCJ2 with four in-streams; bonds
+//     in-stream 5 from coder 0, 4 from 1, 3 from 2; pack streams
+//     in-streams 2 (MAIN packed), 6 (RC), 1 (CALL packed), 0 (JUMP
+//     packed); unpack sizes JUMP, CALL, MAIN, folder;
+//   - BCJ2 alone (Method None): the only coder is BCJ2 and its four
+//     in-streams are the pack streams in order.
+//
+// With a password the record is then wrapped by encrypted.
+func (p *folderPlan) shape() folderShape {
+	var s folderShape
 	switch {
+	case p.filterID == MethodBCJ2 && p.noCoder:
+		s.coders = []coderRec{{MethodBCJ2, nil, 4}}
+		s.packs = []int{0, 1, 2, 3}
+		s.unpack = []uint64{p.unpackSize}
 	case p.filterID == MethodBCJ2:
-		return appendBCJ2Folder(b, p)
+		s.coders = []coderRec{{MethodLZMA, p.sideProps, 1}, {MethodLZMA, p.sideProps, 1}, {p.coderID, p.coderProps, 1}, {MethodBCJ2, nil, 4}}
+		s.bonds = [][2]int{{5, 0}, {4, 1}, {3, 2}}
+		s.packs = []int{2, 6, 1, 0}
+		s.unpack = []uint64{p.sideUnpack[0], p.sideUnpack[1], p.sideUnpack[2], p.unpackSize}
 	case p.filterID == 0:
-		return appendCoder(b, p.coderID, p.coderProps)
+		s.coders = []coderRec{{p.coderID, p.coderProps, 1}}
+		s.packs = []int{0}
+		s.unpack = []uint64{p.unpackSize}
 	case p.noCoder:
-		return appendCoder(b, p.filterID, p.filterProps)
+		s.coders = []coderRec{{p.filterID, p.filterProps, 1}}
+		s.packs = []int{0}
+		s.unpack = []uint64{p.unpackSize}
+	default:
+		s.coders = []coderRec{{p.coderID, p.coderProps, 1}, {p.filterID, p.filterProps, 1}}
+		s.bonds = [][2]int{{1, 0}}
+		s.packs = []int{0}
+		s.unpack = []uint64{p.unpackSize, p.unpackSize}
 	}
-	b = writeNumber(b, 2)
-	b = appendCoderRecord(b, p.coderID, p.coderProps)
-	b = appendCoderRecord(b, p.filterID, p.filterProps)
-	b = writeNumber(b, 1) // bond: in-stream 1 (the filter's input)
-	b = writeNumber(b, 0) // ... from coder 0's output
+	if p.encrypt {
+		s = s.encrypted(p.aesIVs, p.aesUnpack)
+	}
+	return s
+}
+
+// encrypted wraps every pack stream of the shape in a 7zAES coder
+// (observed on both SoTs for one, two and four pack streams): the k
+// 7zAES coders come first, coder j reading the new pack stream j and
+// feeding the in-stream that was stored pack stream k-1-j; the old
+// bonds shift by k; the new pack streams are in-streams k-1 .. 0, so
+// the stored order is unchanged; the 7zAES unpack sizes (the unpadded
+// lengths) come first.
+func (s folderShape) encrypted(ivs [][aesBlock]byte, unpack []uint64) folderShape {
+	k := len(s.packs)
+	var n folderShape
+	if len(s.coders) == 0 {
+		// A raw stream (the uncompressed header): 7zAES is the only coder.
+		n.coders = []coderRec{{MethodAES, aesProps(ivs[0]), 1}}
+		n.packs = []int{0}
+		n.unpack = append([]uint64(nil), unpack...)
+		return n
+	}
+	for j := 0; j < k; j++ {
+		n.coders = append(n.coders, coderRec{MethodAES, aesProps(ivs[j]), 1})
+		n.bonds = append(n.bonds, [2]int{k + s.packs[k-1-j], j})
+	}
+	n.coders = append(n.coders, s.coders...)
+	for _, b := range s.bonds {
+		n.bonds = append(n.bonds, [2]int{b[0] + k, b[1] + k})
+	}
+	for j := k - 1; j >= 0; j-- {
+		n.packs = append(n.packs, j)
+	}
+	n.unpack = append(append([]uint64(nil), unpack...), s.unpack...)
+	return n
+}
+
+// appendShape serialises a folder record: NumCoders, the coder records,
+// the bonds, then the pack stream indices when there is more than one.
+func appendShape(b []byte, s folderShape) []byte {
+	b = writeNumber(b, uint64(len(s.coders)))
+	for _, c := range s.coders {
+		if c.numIn == 1 {
+			b = appendCoderRecord(b, c.id, c.props)
+		} else {
+			b = appendComplexCoderRecord(b, c.id, c.numIn)
+		}
+	}
+	for _, bond := range s.bonds {
+		b = writeNumber(b, uint64(bond[0]))
+		b = writeNumber(b, uint64(bond[1]))
+	}
+	if len(s.packs) > 1 {
+		for _, ps := range s.packs {
+			b = writeNumber(b, uint64(ps))
+		}
+	}
 	return b
+}
+
+// appendFolder writes the folder record of a plan.
+func appendFolder(b []byte, p *folderPlan) []byte {
+	return appendShape(b, p.shape())
 }
 
 // numCoders is how many coders the plan's folder has (one unpack size
 // is written per coder).
-func (p *folderPlan) numCoders() int {
-	switch {
-	case p.filterID == MethodBCJ2 && !p.noCoder:
-		return 4
-	case p.filterID != 0 && !p.noCoder:
-		return 2
-	}
-	return 1
-}
+func (p *folderPlan) numCoders() int { return len(p.shape().coders) }
 
 // coderUnpackSize is the unpack size written for coder c of the plan's
-// folder (observed for BCJ2: JUMP, CALL, MAIN, then the folder size;
-// otherwise every coder carries the folder size).
-func (p *folderPlan) coderUnpackSize(c int) uint64 {
-	if p.filterID == MethodBCJ2 && !p.noCoder && c < 3 {
-		return p.sideUnpack[c]
-	}
-	return p.unpackSize
-}
-
-// appendBCJ2Folder writes a BCJ2 folder record (observed from the SoT's
-// -mf=BCJ2 archives, the shape 7zDec.c accepts): coders LZMA (JUMP),
-// LZMA (CALL), the method (MAIN), BCJ2 with four in-streams; bonds
-// in-stream 5 from coder 0, 4 from 1, 3 from 2; pack streams in-streams
-// 2 (MAIN packed), 6 (RC), 1 (CALL packed), 0 (JUMP packed). For Method
-// None the only coder is BCJ2 and its four in-streams are the pack
-// streams in order.
-func appendBCJ2Folder(b []byte, p *folderPlan) []byte {
-	if p.noCoder {
-		b = writeNumber(b, 1)
-		b = appendComplexCoderRecord(b, MethodBCJ2, 4)
-		for i := 0; i < 4; i++ {
-			b = writeNumber(b, uint64(i))
-		}
-		return b
-	}
-	b = writeNumber(b, 4)
-	b = appendCoderRecord(b, MethodLZMA, p.sideProps)
-	b = appendCoderRecord(b, MethodLZMA, p.sideProps)
-	b = appendCoderRecord(b, p.coderID, p.coderProps)
-	b = appendComplexCoderRecord(b, MethodBCJ2, 4)
-	for _, bond := range [][2]uint64{{5, 0}, {4, 1}, {3, 2}} {
-		b = writeNumber(b, bond[0])
-		b = writeNumber(b, bond[1])
-	}
-	for _, ps := range []uint64{2, 6, 1, 0} {
-		b = writeNumber(b, ps)
-	}
-	return b
-}
+// folder.
+func (p *folderPlan) coderUnpackSize(c int) uint64 { return p.shape().unpack[c] }
 
 // appendComplexCoderRecord writes a coder record with numIn in-streams
 // and one out-stream (the 0x10 flag) and no properties.

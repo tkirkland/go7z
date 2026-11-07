@@ -78,17 +78,40 @@ type Archive struct {
 	folderToFile []int
 	cacheFolder  int
 	cacheData    []byte
+	password     string
+	headerCoders []coderInfo // the encoded header's folder, when there is one
 }
 
 func crc(b []byte) uint32 { return crc32.ChecksumIEEE(b) }
 
-// Open parses the archive in r (size bytes).
+// Open parses the archive in r (size bytes). An archive whose header is
+// encrypted (-mhe) needs OpenWithPassword; one with encrypted data only
+// opens here and needs the password for Extract.
 func Open(r io.ReaderAt, size int64) (*Archive, error) {
-	a := &Archive{r: r, size: size, cacheFolder: -1}
+	return OpenWithPassword(r, size, "")
+}
+
+// OpenWithPassword is Open with the 7zAES password used for encrypted
+// headers and folders.
+func OpenWithPassword(r io.ReaderAt, size int64, password string) (*Archive, error) {
+	a := &Archive{r: r, size: size, cacheFolder: -1, password: password}
 	if err := a.open(); err != nil {
 		return nil, err
 	}
 	return a, nil
+}
+
+// SetPassword sets the password used by Extract for encrypted folders.
+func (a *Archive) SetPassword(password string) { a.password = password }
+
+// HeaderCoders returns the coder records of the encoded header's
+// folder (nil when the header is stored plain).
+func (a *Archive) HeaderCoders() []Coder {
+	out := make([]Coder, len(a.headerCoders))
+	for i, c := range a.headerCoders {
+		out[i] = Coder{MethodID: c.methodID, NumStreams: int(c.numStreams), Props: append([]byte(nil), c.props...)}
+	}
+	return out
 }
 
 func (a *Archive) readAt(off uint64, n uint64) ([]byte, error) {
@@ -157,6 +180,7 @@ func (a *Archive) open() error {
 		if err != nil {
 			return err
 		}
+		a.headerCoders = tempAr.folders[0].coders
 		sd = &szData{b: bufs[0]}
 		if t, err = sd.readNumber(); err != nil {
 			return err
@@ -1123,6 +1147,13 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 	inSize := uint64(len(in))
 	out := make([]byte, outSize)
 	switch c.methodID {
+	case MethodAES:
+		// 7zAES (aes.go): the key from the password, the IV from the
+		// properties, zero padding stripped to the unpack size.
+		if d.a.password == "" {
+			return nil, ErrPassword
+		}
+		return aesDecrypt(c.props, d.a.password, in, outSize)
 	case MethodCopy:
 		if inSize != outSize {
 			return nil, ErrData

@@ -24,3 +24,17 @@ func TestSoT7z(t *testing.T) {
 		})
 	}
 }
+
+// TestSoT7zAES is the proof for the 7zAES coder (-p, -mhe): with the
+// SoT's IVs injected the module's archives are byte-identical to each
+// lane's, the SoT tests them with the password, and the module reads
+// the SoT's. The matrix is the parity check for codec/7zAES.
+func TestSoT7zAES(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunAESMatrix(t, root, lane)
+		})
+	}
+}
