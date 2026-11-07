@@ -47,3 +47,40 @@ func TestEncodeSoTARM64(t *testing.T) {
 		})
 	}
 }
+
+// TestEncodeSoTSwap2 is the same proof for the Swap2 byte-swap filter
+// (-m0=Swap2); the matrix is the parity check for codec/Swap2.
+func TestEncodeSoTSwap2(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunSwapMatrix(t, root, lane, sottest.Swap2Check)
+		})
+	}
+}
+
+// TestEncodeSoTSwap4 is the same proof for Swap4 (-m0=Swap4); the
+// matrix is the parity check for codec/Swap4.
+func TestEncodeSoTSwap4(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunSwapMatrix(t, root, lane, sottest.Swap4Check)
+		})
+	}
+}
+
+// TestEncodeSoTDelta is the same proof for the Delta filter
+// (-m0=Delta:<N>, bra/delta.go ported from Delta.c); the matrix is the
+// parity check for codec/Delta.
+func TestEncodeSoTDelta(t *testing.T) {
+	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) {
+			sottest.RunDeltaMatrix(t, root, lane)
+		})
+	}
+}

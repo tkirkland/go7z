@@ -60,6 +60,17 @@ const (
 	// folder shapes as BCJ. Observed: coder record 01 0A (1-byte id, no
 	// properties) in both lanes; the SoT rejects -m0=ARM64:pc=N.
 	ARM64
+	// Swap2 and Swap4 are the byte-swap filters (bra.Swap2Convert,
+	// bra.Swap4Convert); same folder shapes as BCJ. Observed: coder
+	// records 03 02 03 02 and 03 02 03 04, no properties, identical in
+	// both lanes; -mf=Swap2 is accepted; a parameter is rejected.
+	Swap2
+	Swap4
+	// Delta is the Delta filter (bra.DeltaEncode, ported from Delta.c)
+	// with Options.DeltaDistance; same folder shapes as BCJ. Observed:
+	// coder record 21 03 01 <distance-1>, identical in both lanes;
+	// -m0=Delta is distance 1; 0 and 257 are rejected.
+	Delta
 )
 
 // LevelStore is the Level value for -mx0.
@@ -70,7 +81,10 @@ const LevelStore = -1
 type Options struct {
 	Method Method
 	Filter Filter // branch converter in front of Method; NoFilter = none
-	Level  int    // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
+	// DeltaDistance is the Delta filter's distance, 1..256; 0 means the
+	// SoT's default (1). Ignored for the other filters.
+	DeltaDistance int
+	Level         int // -mx 1..9; 0 = default (5); LevelStore = -mx0, which selects Copy (observed)
 
 	// LZMAProps / LZMA2Props override the level defaults for the data
 	// coder. Level and ReduceSize are set by the writer.
@@ -289,13 +303,14 @@ func (w *Writer) level() int {
 
 // folderPlan is one folder to encode: a run of data items.
 type folderPlan struct {
-	items      []int // indices into sorted items
-	unpackSize uint64
-	packSize   uint64 // total of packSizes
-	coderID    uint32 // main coder; MethodCopy when the filter stands alone (not written then)
-	coderProps []byte
-	filterID   uint32 // 0 = no filter; otherwise the second coder, bound to the first
-	noCoder    bool   // Method None: the filter is the only coder
+	items       []int // indices into sorted items
+	unpackSize  uint64
+	packSize    uint64 // total of packSizes
+	coderID     uint32 // main coder; MethodCopy when the filter stands alone (not written then)
+	coderProps  []byte
+	filterID    uint32 // 0 = no filter; otherwise the second coder, bound to the first
+	filterProps []byte // the filter coder's properties (Delta: one byte, distance-1)
+	noCoder     bool   // Method None: the filter is the only coder
 
 	// BCJ2 folders have four pack streams, in stored order (packSizes),
 	// LZMA side coders (sideProps) and one unpack size per coder.
@@ -331,6 +346,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		method = Copy
 	}
 	var filterID uint32
+	var filterProps []byte
 	switch w.opts.Filter {
 	case NoFilter:
 		if method == None {
@@ -346,6 +362,20 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		filterID = MethodARMT
 	case ARM64:
 		filterID = MethodARM64
+	case Swap2:
+		filterID = MethodSwap2
+	case Swap4:
+		filterID = MethodSwap4
+	case Delta:
+		filterID = MethodDelta
+		d := w.opts.DeltaDistance
+		if d == 0 {
+			d = 1
+		}
+		if d < 1 || d > 256 {
+			return fmt.Errorf("sevenzip: Delta distance %d out of range 1..256", d)
+		}
+		filterProps = []byte{byte(d - 1)}
 	default:
 		return fmt.Errorf("sevenzip: unknown filter %d", w.opts.Filter)
 	}
@@ -379,7 +409,7 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 				continue
 			}
 		}
-		plans = append(plans, folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, noCoder: method == None})
+		plans = append(plans, folderPlan{items: []int{i}, unpackSize: items[i].size, filterID: filterID, filterProps: filterProps, noCoder: method == None})
 	}
 
 	// Start header placeholder.
@@ -420,6 +450,12 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 			src = bra.NewARMTEncodeReader(fr)
 		case MethodARM64:
 			src = bra.NewARM64EncodeReader(fr)
+		case MethodSwap2:
+			src = bra.NewSwap2EncodeReader(fr)
+		case MethodSwap4:
+			src = bra.NewSwap4EncodeReader(fr)
+		case MethodDelta:
+			src = bra.NewDeltaEncodeReader(int(p.filterProps[0])+1, fr)
 		}
 		var err error
 		if p.filterID == MethodBCJ2 {
@@ -754,11 +790,11 @@ func appendFolder(b []byte, p *folderPlan) []byte {
 	case p.filterID == 0:
 		return appendCoder(b, p.coderID, p.coderProps)
 	case p.noCoder:
-		return appendCoder(b, p.filterID, nil)
+		return appendCoder(b, p.filterID, p.filterProps)
 	}
 	b = writeNumber(b, 2)
 	b = appendCoderRecord(b, p.coderID, p.coderProps)
-	b = appendCoderRecord(b, p.filterID, nil)
+	b = appendCoderRecord(b, p.filterID, p.filterProps)
 	b = writeNumber(b, 1) // bond: in-stream 1 (the filter's input)
 	b = writeNumber(b, 0) // ... from coder 0's output
 	return b

@@ -1183,6 +1183,32 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 		}
 		copy(out, in)
 		bra.ARM64Convert(out, pc, false)
+	case MethodSwap2, MethodSwap4:
+		// Byte-swap filters over the whole stream, no properties
+		// (observed on the SoT; the C++ coder is LGPL and not ported).
+		if len(c.props) != 0 {
+			return nil, ErrUnsupported
+		}
+		if inSize != outSize {
+			return nil, ErrData
+		}
+		copy(out, in)
+		if c.methodID == MethodSwap2 {
+			bra.Swap2Decode(out)
+		} else {
+			bra.Swap4Decode(out)
+		}
+	case MethodDelta:
+		// 7zDec.c: PropsSize must be 1; Delta_Init then Delta_Decode with
+		// distance props[0]+1 over the whole stream.
+		if len(c.props) != 1 {
+			return nil, ErrUnsupported
+		}
+		if inSize != outSize {
+			return nil, ErrData
+		}
+		copy(out, in)
+		bra.DeltaDecode(int(c.props[0])+1, out)
 	case MethodLZMA:
 		written, consumed, status, err := lzma.DecodeOneShot(out, in, c.props, lzma.FinishEnd)
 		if err != nil {

@@ -3,6 +3,7 @@ package sottest
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/tkirkland/go7z/internal/sot"
@@ -263,6 +264,88 @@ func SevenZCases(exe []byte) []SevenZCase {
 	arm64("arm64_tree_copy_ms_off", arm64Tree, []string{"arm64"}, []string{"-m0=ARM64", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
 	arm64("arm64_pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=ARM64"}, sevenzip.Options{})
 	arm64("arm64_mixed", mixed, mixedInputs, []string{"-mf=ARM64"}, sevenzip.Options{})
+	// Swap2 and Swap4 filters: the same shapes over binary data with
+	// odd sizes, so the unswapped tail and the solid-block boundaries
+	// between files are hit.
+	swapTree := []TreeFile{
+		{"swap/a.bin", DeterministicData(100001)},
+		{"swap/b.bin", DeterministicData(200003)},
+		{"swap/c.bin", DeterministicData(2002)},
+		{"swap/empty.bin", nil},
+		{"swap/dir/", nil},
+	}
+	swapOne := []TreeFile{{"in/swap.bin", DeterministicData(300001)}}
+	for _, sw := range []struct {
+		name   string
+		filter sevenzip.Filter
+	}{{"Swap2", sevenzip.Swap2}, {"Swap4", sevenzip.Swap4}} {
+		m0 := "-m0=" + sw.name
+		mf := "-mf=" + sw.name
+		lower := strings.ToLower(sw.name)
+		swap := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+			opts.Filter = sw.filter
+			add(lower+"_"+name, files, inputs, args, opts)
+		}
+		swap("only", swapOne, []string{"in/swap.bin"}, []string{m0}, sevenzip.Options{Method: sevenzip.None})
+		swap("only_hc_off", swapOne, []string{"in/swap.bin"}, []string{m0, "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+		swap("lzma2", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=LZMA2"}, sevenzip.Options{})
+		swap("lzma2_hc_off", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+		swap("lzma2_mx1", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=LZMA2", "-mx=1"}, sevenzip.Options{Level: 1})
+		swap("lzma2_mx9", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=LZMA2", "-mx=9"}, sevenzip.Options{Level: 9})
+		swap("lzma", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+		swap("copy", swapOne, []string{"in/swap.bin"}, []string{m0, "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+		swap("mf", swapOne, []string{"in/swap.bin"}, []string{mf}, sevenzip.Options{})
+		swap("mf_mx0", swapOne, []string{"in/swap.bin"}, []string{mf, "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+		swap("tree_only", swapTree, []string{"swap"}, []string{m0}, sevenzip.Options{Method: sevenzip.None})
+		swap("tree_only_ms_off", swapTree, []string{"swap"}, []string{m0, "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+		swap("tree_lzma2", swapTree, []string{"swap"}, []string{m0, "-m1=LZMA2"}, sevenzip.Options{})
+		swap("tree_lzma2_hc_off", swapTree, []string{"swap"}, []string{m0, "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+		swap("tree_lzma2_ms_off", swapTree, []string{"swap"}, []string{m0, "-m1=LZMA2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+		swap("tree_lzma2_ms_150k", swapTree, []string{"swap"}, []string{m0, "-m1=LZMA2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+		swap("tree_lzma", swapTree, []string{"swap"}, []string{m0, "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+		swap("tree_copy_ms_off", swapTree, []string{"swap"}, []string{m0, "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+		swap("pe_tree_mf", peTree, []string{"pe"}, []string{mf}, sevenzip.Options{})
+		swap("mixed", mixed, mixedInputs, []string{mf}, sevenzip.Options{})
+	}
+	// Delta filter: the same shapes at the default distance and at
+	// explicit distances, over odd-sized binary data.
+	deltaTree := []TreeFile{
+		{"delta/a.bin", DeterministicData(100001)},
+		{"delta/b.bin", DeterministicData(200003)},
+		{"delta/c.bin", DeterministicData(2002)},
+		{"delta/empty.bin", nil},
+		{"delta/dir/", nil},
+	}
+	deltaOne := []TreeFile{{"in/delta.bin", DeterministicData(300001)}}
+	delta := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Filter = sevenzip.Delta
+		add("delta_"+name, files, inputs, args, opts)
+	}
+	delta("only", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta"}, sevenzip.Options{Method: sevenzip.None})
+	delta("only_hc_off", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	delta("only_d4", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta:4"}, sevenzip.Options{Method: sevenzip.None, DeltaDistance: 4})
+	delta("only_d256", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta:256"}, sevenzip.Options{Method: sevenzip.None, DeltaDistance: 256})
+	delta("lzma2", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=LZMA2"}, sevenzip.Options{})
+	delta("lzma2_d2", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta:2", "-m1=LZMA2"}, sevenzip.Options{DeltaDistance: 2})
+	delta("lzma2_hc_off", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	delta("lzma2_mx1", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=LZMA2", "-mx=1"}, sevenzip.Options{Level: 1})
+	delta("lzma2_mx9", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=LZMA2", "-mx=9"}, sevenzip.Options{Level: 9})
+	delta("lzma", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	delta("copy", deltaOne, []string{"in/delta.bin"}, []string{"-m0=Delta", "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	delta("mf", deltaOne, []string{"in/delta.bin"}, []string{"-mf=Delta"}, sevenzip.Options{})
+	delta("mf_d3", deltaOne, []string{"in/delta.bin"}, []string{"-mf=Delta:3"}, sevenzip.Options{DeltaDistance: 3})
+	delta("mf_mx0", deltaOne, []string{"in/delta.bin"}, []string{"-mf=Delta", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	delta("tree_only", deltaTree, []string{"delta"}, []string{"-m0=Delta"}, sevenzip.Options{Method: sevenzip.None})
+	delta("tree_only_ms_off", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+	delta("tree_only_d8", deltaTree, []string{"delta"}, []string{"-m0=Delta:8"}, sevenzip.Options{Method: sevenzip.None, DeltaDistance: 8})
+	delta("tree_lzma2", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=LZMA2"}, sevenzip.Options{})
+	delta("tree_lzma2_hc_off", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	delta("tree_lzma2_ms_off", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=LZMA2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	delta("tree_lzma2_ms_150k", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=LZMA2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	delta("tree_lzma", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	delta("tree_copy_ms_off", deltaTree, []string{"delta"}, []string{"-m0=Delta", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+	delta("pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=Delta"}, sevenzip.Options{})
+	delta("mixed", mixed, mixedInputs, []string{"-mf=Delta"}, sevenzip.Options{})
 	// BCJ2: alone (-m0=BCJ2), forced with -mf=BCJ2 in front of each
 	// method and level (the four-coder folder with the LZMA side
 	// streams), the same trees as BCJ, and a tree whose files hold calls
