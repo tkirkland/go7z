@@ -170,8 +170,8 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   (IDE files, README, LICENSE, perf test), `c8e1e39` (BCJ filter,
   `bra/`, container bonds), `c25250f`..`cb927d3` (two-lane harness,
   fixtures, docs), `d503515` (BCJ2: `bra/bcj2.go`, generic folder
-  decoder, BCJ2 folders in the writer), `ca0a2c3` (docs), the ARM
-  commit (`bra/bra.go`, `Options.Filter = ARM`), then this handoff
+  decoder, BCJ2 folders in the writer), `ca0a2c3` (docs), `c2536ee`
+  (ARM: `bra/bra.go`, `Options.Filter = ARM`), then this handoff
   revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
