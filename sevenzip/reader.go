@@ -1141,6 +1141,17 @@ func (d *folderDecoder) decodeCoder(ci int) ([]byte, error) {
 		}
 		copy(out, in)
 		bra.X86Decode(out)
+	case MethodARM:
+		// 7zDec.c: z7_BranchConv_ARM_Dec over the whole stream, pc 0, no
+		// properties.
+		if len(c.props) != 0 {
+			return nil, ErrUnsupported
+		}
+		if inSize != outSize {
+			return nil, ErrData
+		}
+		copy(out, in)
+		bra.ARMDecode(out)
 	case MethodLZMA:
 		written, consumed, status, err := lzma.DecodeOneShot(out, in, c.props, lzma.FinishEnd)
 		if err != nil {

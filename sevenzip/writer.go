@@ -54,6 +54,7 @@ const (
 	// pack stream as is. With Method None (-m0=BCJ2 alone) the folder's
 	// only coder is BCJ2 with four pack streams MAIN, CALL, JUMP, RC.
 	BCJ2
+	ARM // ARM (32-bit) BL converter (bra.ARMConvert); same folder shapes as BCJ
 )
 
 // LevelStore is the Level value for -mx0.
@@ -334,6 +335,8 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		filterID = MethodBCJ
 	case BCJ2:
 		filterID = MethodBCJ2
+	case ARM:
+		filterID = MethodARM
 	default:
 		return fmt.Errorf("sevenzip: unknown filter %d", w.opts.Filter)
 	}
@@ -399,8 +402,11 @@ func (w *Writer) Write(out io.WriteSeeker) error {
 		cw := &countWriter{w: out}
 		fr := &folderReader{items: items, idx: p.items}
 		var src io.Reader = fr
-		if p.filterID == MethodBCJ {
+		switch p.filterID {
+		case MethodBCJ:
 			src = bra.NewX86EncodeReader(fr)
+		case MethodARM:
+			src = bra.NewARMEncodeReader(fr)
 		}
 		var err error
 		if p.filterID == MethodBCJ2 {

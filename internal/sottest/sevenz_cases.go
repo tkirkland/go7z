@@ -162,6 +162,41 @@ func SevenZCases(exe []byte) []SevenZCase {
 	bcj("bcj_tree_many_ms_4m", tenMB, []string{"mb"}, []string{"-mf=BCJ", "-ms=4m"}, sevenzip.Options{SolidSize: 4 << 20})
 	bcj("bcj_small", small, []string{"in/a.txt"}, []string{"-mf=BCJ"}, sevenzip.Options{})
 	bcj("bcj_mixed", mixed, mixedInputs, []string{"-mf=BCJ"}, sevenzip.Options{})
+	// ARM filter: the same shapes as BCJ (alone, in front of each
+	// method, forced with -mf=ARM) over BL-instruction patterns and the
+	// PE tree.
+	armTree := []TreeFile{
+		{"arm/a.bin", ARMPattern(100000, 1)},
+		{"arm/b.bin", ARMPattern(200001, 2)},
+		{"arm/c.bin", ARMPattern(2002, 3)},
+		{"arm/empty.bin", nil},
+		{"arm/dir/", nil},
+	}
+	armOne := []TreeFile{{"in/arm.bin", ARMPattern(300000, 7)}}
+	arm := func(name string, files []TreeFile, inputs []string, args []string, opts sevenzip.Options) {
+		opts.Filter = sevenzip.ARM
+		add(name, files, inputs, args, opts)
+	}
+	arm("arm_only", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM"}, sevenzip.Options{Method: sevenzip.None})
+	arm("arm_only_hc_off", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-mhc=off"}, sevenzip.Options{Method: sevenzip.None, NoHeaderCompression: true})
+	arm("arm_lzma2", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=LZMA2"}, sevenzip.Options{})
+	arm("arm_lzma2_hc_off", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	arm("arm_lzma2_mx1", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=LZMA2", "-mx=1"}, sevenzip.Options{Level: 1})
+	arm("arm_lzma2_mx9", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=LZMA2", "-mx=9"}, sevenzip.Options{Level: 9})
+	arm("arm_lzma", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	arm("arm_copy", armOne, []string{"in/arm.bin"}, []string{"-m0=ARM", "-m1=Copy"}, sevenzip.Options{Method: sevenzip.Copy})
+	arm("arm_mf", armOne, []string{"in/arm.bin"}, []string{"-mf=ARM"}, sevenzip.Options{})
+	arm("arm_mf_mx0", armOne, []string{"in/arm.bin"}, []string{"-mf=ARM", "-mx=0"}, sevenzip.Options{Level: sevenzip.LevelStore})
+	arm("arm_tree_only", armTree, []string{"arm"}, []string{"-m0=ARM"}, sevenzip.Options{Method: sevenzip.None})
+	arm("arm_tree_only_ms_off", armTree, []string{"arm"}, []string{"-m0=ARM", "-ms=off"}, sevenzip.Options{Method: sevenzip.None, SolidOff: true})
+	arm("arm_tree_lzma2", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=LZMA2"}, sevenzip.Options{})
+	arm("arm_tree_lzma2_hc_off", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=LZMA2", "-mhc=off"}, sevenzip.Options{NoHeaderCompression: true})
+	arm("arm_tree_lzma2_ms_off", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=LZMA2", "-ms=off"}, sevenzip.Options{SolidOff: true})
+	arm("arm_tree_lzma2_ms_150k", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=LZMA2", "-ms=150k"}, sevenzip.Options{SolidSize: 150 << 10})
+	arm("arm_tree_lzma", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=LZMA"}, sevenzip.Options{Method: sevenzip.LZMA})
+	arm("arm_tree_copy_ms_off", armTree, []string{"arm"}, []string{"-m0=ARM", "-m1=Copy", "-ms=off"}, sevenzip.Options{Method: sevenzip.Copy, SolidOff: true})
+	arm("arm_pe_tree_mf", peTree, []string{"pe"}, []string{"-mf=ARM"}, sevenzip.Options{})
+	arm("arm_mixed", mixed, mixedInputs, []string{"-mf=ARM"}, sevenzip.Options{})
 	// BCJ2: alone (-m0=BCJ2), forced with -mf=BCJ2 in front of each
 	// method and level (the four-coder folder with the LZMA side
 	// streams), the same trees as BCJ, and a tree whose files hold calls

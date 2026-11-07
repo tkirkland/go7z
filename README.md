@@ -1,7 +1,8 @@
 # go7z
 
-A pure Go implementation of 7-Zip's LZMA, LZMA2, BCJ and BCJ2 filters
-and 7z container, written to be byte-identical to 7-Zip itself.
+A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2 and ARM
+filters and the 7z container, written to be byte-identical to 7-Zip
+itself.
 
 The source of truth (SoT, the word used throughout this repo) is a pinned
 pair of 7-Zip 26.05 binaries, the 32-bit and the 64-bit `7za.exe` from
@@ -18,7 +19,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 6 of 92; 64-bit lane 6 of 92**. Six lines (Deflate,
+**32-bit lane 7 of 92; 64-bit lane 7 of 92**. Six lines (Deflate,
 Deflate64, BZip2, Cab, gzip, bzip2) have no public-domain source and
 are counted as blocked.
 
@@ -29,9 +30,10 @@ are counted as blocked.
 | codec/LZMA2       | `lzma`: encoder and decoder, 42 cases identical          |
 | codec/BCJ         | `bra`: x86 converter, 37 cases identical                 |
 | codec/BCJ2        | `bra`: four-stream x86 converter, 44 cases identical     |
-| format/7z         | `sevenzip`: 121 archives identical, all read back        |
+| codec/ARM         | `bra`: ARM BL converter, 39 cases identical              |
+| format/7z         | `sevenzip`: 141 archives identical, all read back        |
 
-Everything else (the ARM branch filters, Swap, Delta, encryption,
+Everything else (the ARMT and ARM64 filters, Swap, Delta, encryption,
 xz/lzma formats, the CLI commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
@@ -41,10 +43,11 @@ for the full checklist and the order of work.
   public-domain LZMA SDK sources in 7-Zip 26.05 (`LzmaEnc.c`, `LzFind.c`,
   `Lzma2Enc.c`, `LzmaDec.c`, `Lzma2Dec.c`).
 - `copycoder`: the Copy (store) coder.
-- `bra`: the x86 branch converters: BCJ, ported from `Bra86.c`, as
-  whole-buffer functions and as streaming readers; BCJ2, ported from
-  `Bcj2Enc.c` and `Bcj2.c`, as the SDK's state machines plus
-  whole-buffer and streaming four-stream encoders and a decoder.
+- `bra`: the branch converters: BCJ (x86), ported from `Bra86.c`, and
+  ARM, ported from `Bra.c`, as whole-buffer functions and as streaming
+  readers; BCJ2, ported from `Bcj2Enc.c` and `Bcj2.c`, as the SDK's
+  state machines plus whole-buffer and streaming four-stream encoders
+  and a decoder.
 - `sevenzip`: the 7z container. The reader is a port of `7zArcIn.c` and
   `7zDec.c`. The writer has no public-domain source; it is built from
   `DOC/7zFormat.txt` and from observing what `7za` writes.
@@ -71,7 +74,7 @@ for i, e := range a.Entries {
 ```
 
 `Options` covers the method (LZMA2, LZMA, Copy, or the filter alone),
-the BCJ and BCJ2 filters, level, solid mode and block size, header
+the BCJ, BCJ2 and ARM filters, level, solid mode and block size, header
 compression, threads and which timestamps to store.
 Raw codec streams are available through `lzma.EncodeBytes`,
 `lzma.Lzma2Encoder`, `lzma.DecodeOneShot` and `lzma.Lzma2DecodeOneShot`.
@@ -101,7 +104,7 @@ The pinned sources used for the ports are git tag `26.05` of
 ## Licensing of the ported code
 
 The C sources ported here (`C/Lzma*.c`, `C/LzFind.c`, `C/Bra86.c`,
-`C/Bcj2Enc.c`, `C/Bcj2.c`, `C/7zArcIn.c`, `C/7zDec.c`) are public
+`C/Bra.c`, `C/Bcj2Enc.c`, `C/Bcj2.c`, `C/7zArcIn.c`, `C/7zDec.c`) are public
 domain, as marked in each file. The C++ archive
 layer of 7-Zip is LGPL and is not ported; the 7z writer reproduces its
 output from the format documentation and from observation.
