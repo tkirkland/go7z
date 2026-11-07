@@ -134,7 +134,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    ruled on 2026-11-07 that they count and are to be done from that
    source like every other line ("all 12").
 
-## Session state (2026-11-07, after the ARM64 .. filter automation session)
+## Session state (2026-11-07, after the AES256CBC session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -503,6 +503,11 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   one, and the module extracts the SoT's (`OpenWithPassword`,
   `SetPassword`, `HeaderCoders`; `ErrPassword` without one). The key
   derivation (0.3 s) is cached per password.
+- `sevenzip.MethodAES256CBC` (codec/AES256CBC, id 6F00181): no coder;
+  the reader reports it in `FolderCoders` and returns `ErrUnsupported`
+  on extraction, and no `Method` or `Filter` writes it, as both SoTs
+  (user ruling 2026-11-07: 1:1 refusal). Proof:
+  `internal/sottest/aes256cbc.go` / parity `codec/AES256CBC`.
 - `ppmd/` (codec/PPMD): port of `Ppmd7.c`, `Ppmd7Enc.c`, `Ppmd7Dec.c`
   (`Model` over a byte arena addressed by uint32 offsets with every
   field read at the C struct's byte offset, so the one-state and
