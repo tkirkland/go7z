@@ -19,12 +19,12 @@ import (
 // sotHeaders writes a multi-item archive with the SoT twice, with
 // and without header compression, and returns the raw header and the
 // packed header bytes.
-func sotHeaders(t *testing.T, root, dir string, files []sottest.TreeFile, inputs []string) (raw, packed []byte) {
+func sotHeaders(t *testing.T, root string, lane sot.Lane, dir string, files []sottest.TreeFile, inputs []string) (raw, packed []byte) {
 	t.Helper()
 	tree := filepath.Join(dir, "tree")
 	os.MkdirAll(tree, 0o755)
 	sottest.MakeTree(t, tree, files)
-	bin, err := sot.Binary(root)
+	bin, err := sot.Binary(root, lane)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +106,13 @@ func readNum(t *testing.T, r *bytes.Reader) uint64 {
 // searches the parameter space and reports every match.
 func TestHeaderEncoderParams(t *testing.T) {
 	root := sottest.RepoRoot(t)
+	for _, lane := range sot.Lanes {
+		lane := lane
+		t.Run(lane.String(), func(t *testing.T) { headerEncoderParams(t, root, lane) })
+	}
+}
+
+func headerEncoderParams(t *testing.T, root string, lane sot.Lane) {
 	mixed := []sottest.TreeFile{
 		{Name: "in/a.txt", Data: sottest.TextLike(85)},
 		{Name: "in/b.bin", Data: sottest.DeterministicData(4096)},
@@ -129,7 +136,7 @@ func TestHeaderEncoderParams(t *testing.T) {
 		{name: "many", files: many, inputs: []string{"many"}},
 	}
 	for i := range headers {
-		headers[i].raw, headers[i].packed = sotHeaders(t, root, t.TempDir(), headers[i].files, headers[i].inputs)
+		headers[i].raw, headers[i].packed = sotHeaders(t, root, lane, t.TempDir(), headers[i].files, headers[i].inputs)
 	}
 	props, sds := sevenzip.HeaderEncProps()
 	ok := true

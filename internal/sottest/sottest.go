@@ -1,7 +1,9 @@
 // Package sottest holds helpers shared by the SoT-backed tests:
-// deterministic inputs, and ways to get raw codec streams out of what the
-// pinned 7zr writes (single-block .xz payloads and single-file .7z packed
-// streams), so the module's bytes can be compared with the SoT's.
+// deterministic inputs, and ways to get raw codec streams out of what a
+// lane's pinned 7za writes (single-block .xz payloads and single-file .7z
+// packed streams), so the module's bytes can be compared with the SoT's.
+// Every matrix runs for one lane (sot.Lane32 or sot.Lane64); the caller
+// runs it for both.
 package sottest
 
 import (
@@ -165,16 +167,16 @@ func readXzVLI(b []byte) (uint64, int) {
 	return v, len(b)
 }
 
-// SoTXz writes input to a file in dir and has the SoT pack it as
-// .xz with the given extra switches; it returns the .xz bytes.
-func SoTXz(t testing.TB, root, dir string, input []byte, args ...string) []byte {
+// SoTXz writes input to a file in dir and has the lane's SoT pack it
+// as .xz with the given extra switches; it returns the .xz bytes.
+func SoTXz(t testing.TB, root string, lane sot.Lane, dir string, input []byte, args ...string) []byte {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "in.bin"), input, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	full := append([]string{"a", "-txz"}, args...)
 	full = append(full, filepath.Join(dir, "out.xz"), filepath.Join(dir, "in.bin"))
-	if out, err := sot.Run(root, full...); err != nil {
+	if out, err := sot.Run(root, lane, full...); err != nil {
 		t.Fatalf("SoT %v: %v\n%s", full, err, out)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "out.xz"))
@@ -184,20 +186,20 @@ func SoTXz(t testing.TB, root, dir string, input []byte, args ...string) []byte 
 	return data
 }
 
-// SevenZRawStream writes a single-file .7z with the SoT and returns
-// the raw packed stream: it starts right after the 32-byte signature
-// header and its length is the "Packed Size" the SoT lists.
-func SevenZRawStream(t testing.TB, root, dir string, input []byte, args ...string) []byte {
+// SevenZRawStream writes a single-file .7z with the lane's SoT and
+// returns the raw packed stream: it starts right after the 32-byte
+// signature header and its length is the "Packed Size" the SoT lists.
+func SevenZRawStream(t testing.TB, root string, lane sot.Lane, dir string, input []byte, args ...string) []byte {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "in.bin"), input, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	full := append([]string{"a", "-t7z"}, args...)
 	full = append(full, filepath.Join(dir, "out.7z"), filepath.Join(dir, "in.bin"))
-	if out, err := sot.Run(root, full...); err != nil {
+	if out, err := sot.Run(root, lane, full...); err != nil {
 		t.Fatalf("SoT %v: %v\n%s", full, err, out)
 	}
-	list, err := sot.Run(root, "l", "-slt", filepath.Join(dir, "out.7z"))
+	list, err := sot.Run(root, lane, "l", "-slt", filepath.Join(dir, "out.7z"))
 	if err != nil {
 		t.Fatalf("SoT l -slt: %v", err)
 	}

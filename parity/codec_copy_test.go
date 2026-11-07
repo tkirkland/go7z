@@ -15,7 +15,7 @@ func init() {
 	checks["codec/Copy"] = LineCheck{
 		Name: "Copy coder identical to SoT",
 		Check: func(t *testing.T, env *Env) {
-			sottest.RunCopyMatrix(t, env.Root)
+			sottest.RunCopyMatrix(t, env.Root, env.Lane)
 		},
 	}
 }

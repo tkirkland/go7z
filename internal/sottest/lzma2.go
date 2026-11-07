@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/tkirkland/go7z/internal/sot"
 	"github.com/tkirkland/go7z/lzma"
+	"github.com/tkirkland/go7z/sevenzip"
 )
 
 // LZMA2MethodCases are the 7z -m0=LZMA2 method strings covered against
@@ -18,15 +20,17 @@ var LZMA2MethodCases = []string{
 
 // CheckLZMA2 encodes input with the module for the given 7z method string
 // and -mx level (mt1 adds -mmt1) and compares with the raw LZMA2 stream
-// the SoT writes into .7z; then it decodes the SoT's stream.
-func CheckLZMA2(t *testing.T, root, dir string, method string, level int, mt1 bool, input []byte) {
+// the lane's SoT writes into .7z; then it decodes the SoT's stream. The
+// block thread count of the default follows the lane
+// (sevenzip.Threads).
+func CheckLZMA2(t *testing.T, root string, lane sot.Lane, dir string, method string, level int, mt1 bool, input []byte) {
 	t.Helper()
 	args := []string{"-m0=" + method, fmt.Sprintf("-mx=%d", level)}
 	if mt1 {
 		args = append(args, "-mmt1")
 	}
-	want := SevenZRawStream(t, root, dir, input, args...)
-	lzmaProps, blockSize, isLzma2 := ParseMethod(t, method, level, len(input))
+	want := SevenZRawStream(t, root, lane, dir, input, args...)
+	lzmaProps, blockSize, isLzma2 := ParseMethod(t, lane, method, level, len(input))
 	if !isLzma2 {
 		t.Fatalf("not an LZMA2 method: %s", method)
 	}
@@ -34,11 +38,11 @@ func CheckLZMA2(t *testing.T, root, dir string, method string, level int, mt1 bo
 	props.Init()
 	props.LzmaProps = lzmaProps
 	props.BlockSize = blockSize
+	threads := 0
 	if mt1 {
-		props.NumBlockThreadsMax = 1
-	} else {
-		props.NumBlockThreadsMax = 2
+		threads = 1
 	}
+	props.NumTotalThreads = sevenzip.Threads(lane.SizeT(), threads, &props)
 	enc := lzma.NewLzma2Encoder()
 	if err := enc.SetProps(&props); err != nil {
 		t.Fatal(err)
@@ -59,15 +63,16 @@ func CheckLZMA2(t *testing.T, root, dir string, method string, level int, mt1 bo
 }
 
 // CheckLZMA2Xz compares the module's LZMA2 stream with the payload of the
-// single-block .xz the SoT writes for -mx level.
-func CheckLZMA2Xz(t *testing.T, root, dir string, level int, input []byte) {
+// single-block .xz the lane's SoT writes for -mx level.
+func CheckLZMA2Xz(t *testing.T, root string, lane sot.Lane, dir string, level int, input []byte) {
 	t.Helper()
-	data := SoTXz(t, root, dir, input, fmt.Sprintf("-mx=%d", level))
+	data := SoTXz(t, root, lane, dir, input, fmt.Sprintf("-mx=%d", level))
 	want, prop, _ := XzSingleBlock(t, data)
 	var props lzma.Lzma2EncProps
 	props.Init()
 	props.LzmaProps.Level = level
 	props.LzmaProps.ReduceSize = uint64(len(input))
+	props.LzmaProps.WordSize = lane.SizeT()
 	enc := lzma.NewLzma2Encoder()
 	if err := enc.SetProps(&props); err != nil {
 		t.Fatal(err)
@@ -90,10 +95,12 @@ func CheckLZMA2Xz(t *testing.T, root, dir string, level int, input []byte) {
 	}
 }
 
-// RunLZMA2Matrix runs every LZMA2 comparison as parallel subtests: the
-// method matrix at -mx5, -mx1/3/7/9, multi-block inputs (block threads
-// and -mmt1), and single-block .xz payloads at sizes 1 to 300000 bytes.
-func RunLZMA2Matrix(t *testing.T, root string) {
+// RunLZMA2Matrix runs every LZMA2 comparison for one lane as parallel
+// subtests: the method matrix at -mx5, -mx1/3/7/9, multi-block inputs
+// (block threads and -mmt1), single-block .xz payloads at sizes 1 to
+// 300000 bytes, and the large inputs of LargeCases (default threads and
+// -mmt1), where the lanes' default dictionaries and block layouts differ.
+func RunLZMA2Matrix(t *testing.T, root string, lane sot.Lane) {
 	txt := TextLike(300000)
 	big := TextLike(1500000)
 	type c struct {
@@ -122,7 +129,7 @@ func RunLZMA2Matrix(t *testing.T, root string) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			CheckLZMA2(t, root, t.TempDir(), cs.method, cs.level, cs.mt1, cs.input)
+			CheckLZMA2(t, root, lane, t.TempDir(), cs.method, cs.level, cs.mt1, cs.input)
 		})
 	}
 	for _, size := range []int{1, 100, 4096, 1 << 16, 300000} {
@@ -130,7 +137,19 @@ func RunLZMA2Matrix(t *testing.T, root string) {
 			size, level := size, level
 			t.Run(fmt.Sprintf("xz_size%d_mx%d", size, level), func(t *testing.T) {
 				t.Parallel()
-				CheckLZMA2Xz(t, root, t.TempDir(), level, DeterministicData(size))
+				CheckLZMA2Xz(t, root, lane, t.TempDir(), level, DeterministicData(size))
+			})
+		}
+	}
+	for _, lc := range LargeCases() {
+		for _, mt1 := range []bool{false, true} {
+			lc, mt1 := lc, mt1
+			name := fmt.Sprintf("large_%s_mx%d", lc.Name, lc.Level)
+			if mt1 {
+				name += "_mt1"
+			}
+			t.Run(name, func(t *testing.T) {
+				CheckLZMA2(t, root, lane, t.TempDir(), "LZMA2", lc.Level, mt1, lc.Input())
 			})
 		}
 	}

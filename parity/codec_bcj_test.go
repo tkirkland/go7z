@@ -16,7 +16,7 @@ func init() {
 	checks["codec/BCJ"] = LineCheck{
 		Name: "BCJ (x86) converter identical to SoT",
 		Check: func(t *testing.T, env *Env) {
-			sottest.RunBCJMatrix(t, env.Root)
+			sottest.RunBCJMatrix(t, env.Root, env.Lane)
 		},
 	}
 }

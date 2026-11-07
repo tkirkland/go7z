@@ -72,11 +72,12 @@ type SevenZCase struct {
 }
 
 // CheckSevenZ creates the tree in dir, writes the archive with the
-// SoT and with the module, requires byte identity, and then reads
-// the SoT's archive with the module and checks every entry against
-// the tree.
-func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
+// lane's SoT and with the module (Options.WordSize set to the lane's),
+// requires byte identity, and then reads the SoT's archive with the
+// module and checks every entry against the tree.
+func CheckSevenZ(t *testing.T, root string, lane sot.Lane, dir string, c SevenZCase) {
 	t.Helper()
+	c.Opts.WordSize = lane.SizeT()
 	tree := filepath.Join(dir, "tree")
 	if err := os.MkdirAll(tree, 0o755); err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 	args := append([]string{"a", "-t7z"}, c.Args...)
 	args = append(args, sotPath)
 	args = append(args, c.Inputs...)
-	cmdOut, err := runSoTIn(root, tree, args...)
+	cmdOut, err := runSoTIn(root, lane, tree, args...)
 	if err != nil {
 		t.Fatalf("SoT %v: %v\n%s", args, err, cmdOut)
 	}
@@ -152,11 +153,11 @@ func CheckSevenZ(t *testing.T, root, dir string, c SevenZCase) {
 	}
 }
 
-// runSoTIn runs the SoT with cwd set to dir (sot.Run uses dir
+// runSoTIn runs the lane's SoT with cwd set to dir (sot.Run uses dir
 // both to locate the binary and as the working directory; the binary is
 // found by walking up from root, so pass root for lookup and dir to run).
-func runSoTIn(root, dir string, args ...string) ([]byte, error) {
-	bin, err := sot.Binary(root)
+func runSoTIn(root string, lane sot.Lane, dir string, args ...string) ([]byte, error) {
+	bin, err := sot.Binary(root, lane)
 	if err != nil {
 		return nil, err
 	}

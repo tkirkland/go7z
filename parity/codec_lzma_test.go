@@ -16,7 +16,7 @@ func init() {
 	checks["codec/LZMA"] = LineCheck{
 		Name: "LZMA encoder and decoder identical to SoT",
 		Check: func(t *testing.T, env *Env) {
-			sottest.RunLZMAMatrix(t, env.Root)
+			sottest.RunLZMAMatrix(t, env.Root, env.Lane)
 		},
 	}
 }

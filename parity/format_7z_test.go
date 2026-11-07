@@ -16,7 +16,7 @@ func init() {
 	checks["format/7z"] = LineCheck{
 		Name: "7z container identical to SoT",
 		Check: func(t *testing.T, env *Env) {
-			sottest.RunSevenZMatrix(t, env.Root)
+			sottest.RunSevenZMatrix(t, env.Root, env.Lane)
 		},
 	}
 }

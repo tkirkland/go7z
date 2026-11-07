@@ -1,0 +1,47 @@
+
+7-Zip (a) 26.05 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-21
+
+
+Formats:
+   C...F..........c.a.m+..  7z       7z            7 z BC AF ' 1C
+    ...F..................  Cab      cab           M S C F 00 00 00 00
+    ......................  Split    001           
+   CK.....................  bzip2    bz2 bzip2 tbz2 (.tar) tbz (.tar) B Z h
+   CK.................m+..  gzip     gz gzip tgz (.tar) tpz (.tar) apk (.tar) 1F 8B 08
+    K.....O...............  lzma     lzma          
+    K.....................  lzma86   lzma86        
+   C......O...LH......m+..  tar      tar ova       offset=257 u s t a r
+   CK.....................  xz       xz txz (.tar) FD 7 z X Z 00
+   C...FMG........c.a.m+..  zip      zip z01 zipx jar xpi odt ods docx xlsx epub ipa apk appx P K 03 04  ||  P K 05 06  ||  P K 06 06  ||  P K 07 08 P K  ||  P K 0 0 P K
+    K.....................  zstd     zst tzst (.tar) ( B5 / FD
+   CK.....O.....XC........  Hash     sha256 sha512 sha384 sha224 sha512-224 sha512-256 sha3-224 sha3-256 sha3-384 sha3-512 sha1 sha2 sha3 sha md5 blake2s blake2b blake2sp xxh64 crc32 crc64 cksum asc 
+
+Codecs:
+   4ED   303011B BCJ2
+    EDF  3030103 BCJ
+    EDF  3030205 PPC
+    EDF  3030401 IA64
+    EDF  3030501 ARM
+    EDF  3030701 ARMT
+    EDF  3030805 SPARC
+    EDF        A ARM64
+    EDF        B RISCV
+    EDF    20302 Swap2
+    EDF    20304 Swap4
+    ED     40202 BZip2
+    ED         0 Copy
+    ED     40109 Deflate64
+    ED     40108 Deflate
+    EDF        3 Delta
+    ED        21 LZMA2
+    ED     30101 LZMA
+    ED     30401 PPMD
+    EDF  6F10701 7zAES
+    EDF  6F00181 AES256CBC
+
+Hashers:
+      4        1 CRC32
+     20      201 SHA1
+     32        A SHA256
+      8      211 XXH64
+      8        4 CRC64

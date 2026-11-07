@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tkirkland/go7z/internal/sot"
 	"github.com/tkirkland/go7z/lzma"
 )
 
@@ -13,13 +14,15 @@ import (
 // properties the SoT's C++ layer passes to the public-domain encoder.
 // The mapping is observed behaviour; each name is a documented 7z method
 // parameter. The dictionary is reduced to the input size as the SoT
-// does (reduceSize). blockSize is the LZMA2 block size (c), 0 if not
-// given; isLzma2 reports an LZMA2 method string.
-func ParseMethod(t testing.TB, m string, level int, size int) (p lzma.EncProps, blockSize uint64, isLzma2 bool) {
+// does (reduceSize), and the word size follows the lane. blockSize is
+// the LZMA2 block size (c), 0 if not given; isLzma2 reports an LZMA2
+// method string.
+func ParseMethod(t testing.TB, lane sot.Lane, m string, level int, size int) (p lzma.EncProps, blockSize uint64, isLzma2 bool) {
 	t.Helper()
 	p.Init()
 	p.Level = level
 	p.ReduceSize = uint64(size)
+	p.WordSize = lane.SizeT()
 	parts := strings.Split(m, ":")
 	isLzma2 = parts[0] == "LZMA2"
 	if parts[0] != "LZMA" && !isLzma2 {
@@ -96,12 +99,12 @@ var LZMAMethodCases = []string{
 }
 
 // CheckLZMA encodes input with the module for the given 7z method string
-// and -mx level and compares with the raw stream the SoT writes into
-// .7z; then it decodes the SoT's stream with the module.
-func CheckLZMA(t *testing.T, root, dir string, method string, level int, input []byte) {
+// and -mx level and compares with the raw stream the lane's SoT writes
+// into .7z; then it decodes the SoT's stream with the module.
+func CheckLZMA(t *testing.T, root string, lane sot.Lane, dir string, method string, level int, input []byte) {
 	t.Helper()
-	want := SevenZRawStream(t, root, dir, input, "-m0="+method, fmt.Sprintf("-mx=%d", level))
-	props, _, isLzma2 := ParseMethod(t, method, level, len(input))
+	want := SevenZRawStream(t, root, lane, dir, input, "-m0="+method, fmt.Sprintf("-mx=%d", level))
+	props, _, isLzma2 := ParseMethod(t, lane, method, level, len(input))
 	if isLzma2 {
 		t.Fatalf("not an LZMA method: %s", method)
 	}
@@ -119,10 +122,11 @@ func CheckLZMA(t *testing.T, root, dir string, method string, level int, input [
 	}
 }
 
-// RunLZMAMatrix runs every LZMA comparison as parallel subtests: the
-// method matrix at -mx5 on text-like input, -mx1/3/7/9 on binary input,
-// and small inputs (1, 100, 4096 bytes).
-func RunLZMAMatrix(t *testing.T, root string) {
+// RunLZMAMatrix runs every LZMA comparison for one lane as parallel
+// subtests: the method matrix at -mx5 on text-like input, -mx1/3/7/9 on
+// binary input, small inputs (1, 100, 4096 bytes), and the large inputs
+// of LargeCases, where the lanes' default dictionaries differ.
+func RunLZMAMatrix(t *testing.T, root string, lane sot.Lane) {
 	bin := DeterministicData(300000)
 	txt := TextLike(300000)
 	type c struct {
@@ -144,7 +148,13 @@ func RunLZMAMatrix(t *testing.T, root string) {
 		cs := cs
 		t.Run(fmt.Sprintf("%s_mx%d_n%d", cs.method, cs.level, len(cs.input)), func(t *testing.T) {
 			t.Parallel()
-			CheckLZMA(t, root, t.TempDir(), cs.method, cs.level, cs.input)
+			CheckLZMA(t, root, lane, t.TempDir(), cs.method, cs.level, cs.input)
+		})
+	}
+	for _, lc := range LargeCases() {
+		lc := lc
+		t.Run(fmt.Sprintf("large_%s_mx%d", lc.Name, lc.Level), func(t *testing.T) {
+			CheckLZMA(t, root, lane, t.TempDir(), "LZMA", lc.Level, lc.Input())
 		})
 	}
 }

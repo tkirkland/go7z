@@ -5,10 +5,10 @@ package lzma
 // coding). The port is literal so that the packed bytes are identical to
 // the SoT's for the same input and properties.
 //
-// The SoT is the 32-bit 7zr build. The two places where the C code
-// depends on sizeof(size_t) — the default dictionary size per level and
-// kNumLogBits (hence the largest accepted dictionary) — follow the 32-bit
-// value, sotSizeT.
+// 7-Zip ships a 32-bit and a 64-bit build, and the C code depends on
+// sizeof(size_t) in two places: the default dictionary size per level
+// and kNumLogBits (hence the largest accepted dictionary). Both follow
+// EncProps.WordSize, which selects the build whose bytes are reproduced.
 
 import (
 	"errors"
@@ -26,8 +26,27 @@ var (
 	ErrFail = errors.New("lzma: encoder failure")
 )
 
-// sotSizeT is sizeof(size_t) of the pinned SoT build (x86).
-const sotSizeT = 4
+// WordSize32 and WordSize64 are the EncProps.WordSize values for the x86
+// and the x64 7-Zip build (sizeof(size_t)).
+const (
+	WordSize32 = 4
+	WordSize64 = 8
+)
+
+// wordSize returns the build word size for a WordSize field: 0 selects
+// the 64-bit build.
+func wordSize(ws int) int {
+	if ws == 0 {
+		return WordSize64
+	}
+	return ws
+}
+
+// numLogBits is kNumLogBits for the build word size.
+func numLogBits(ws int) uint32 { return uint32(11 + ws/8*3) }
+
+// dicLogSizeMaxCompress is kDicLogSizeMaxCompress for the build word size.
+func dicLogSizeMaxCompress(ws int) uint32 { return (numLogBits(ws)-1)*2 + 7 }
 
 const (
 	kLzmaMaxHistorySize = uint32(15) << 28
@@ -37,8 +56,7 @@ const (
 	kNumBitPriceShiftBits = 4
 	repLenCount           = 64
 
-	kNumLogBits            = 11 + sotSizeT/8*3
-	kDicLogSizeMaxCompress = (kNumLogBits-1)*2 + 7
+	kNumLogBitsMax = 14 // kNumLogBits of the 64-bit build; the table is sized for it
 
 	lzmaNumReps = 4
 
@@ -111,6 +129,7 @@ type EncProps struct {
 	WriteEndMark   bool
 	NumThreads     int    // 1 or 2; -1 = default (output is identical either way)
 	ReduceSize     uint64 // expected input size; the dictionary is reduced to it
+	WordSize       int    // sizeof(size_t) of the 7-Zip build reproduced: WordSize32 or WordSize64; 0 = WordSize64
 }
 
 // Init is LzmaEncProps_Init.
@@ -131,14 +150,15 @@ func (p *EncProps) Normalize() {
 		level = 5
 	}
 	p.Level = level
+	ws := wordSize(p.WordSize)
 	if p.DictSize == 0 {
 		switch {
 		case uint(level) <= 4:
 			p.DictSize = uint32(1) << (uint(level)*2 + 16)
-		case uint(level) <= sotSizeT/2+4:
+		case level <= ws/2+4:
 			p.DictSize = uint32(1) << (uint(level) + 20)
 		default:
-			p.DictSize = uint32(1) << (sotSizeT/2 + 24)
+			p.DictSize = uint32(1) << (uint(ws)/2 + 24)
 		}
 	}
 	if uint64(p.DictSize) > p.ReduceSize {
@@ -625,7 +645,8 @@ type Encoder struct {
 	lenProbs    lenEnc
 	repLenProbs lenEnc
 
-	gFastPos [1 << kNumLogBits]byte
+	numLogBits uint32 // kNumLogBits of the build (EncProps.WordSize)
+	gFastPos   [1 << kNumLogBitsMax]byte
 
 	lenEnc    lenPriceEnc
 	repLenEnc lenPriceEnc
@@ -640,7 +661,7 @@ func (p *Encoder) fastPosInit() {
 	g[0] = 0
 	g[1] = 1
 	g = g[2:]
-	for slot := uint32(2); slot < kNumLogBits*2; slot++ {
+	for slot := uint32(2); slot < p.numLogBits*2; slot++ {
 		k := 1 << ((slot >> 1) - 1)
 		for j := 0; j < k; j++ {
 			g[j] = byte(slot)
@@ -652,8 +673,8 @@ func (p *Encoder) fastPosInit() {
 // bsr2 is BSR2_RET (table form).
 func (p *Encoder) bsr2(pos uint32) uint32 {
 	zz := uint32(6)
-	if pos >= 1<<(kNumLogBits+6) {
-		zz = 6 + kNumLogBits - 1
+	if pos >= 1<<(p.numLogBits+6) {
+		zz = 6 + p.numLogBits - 1
 	}
 	return uint32(p.gFastPos[pos>>zz]) + zz*2
 }
@@ -713,8 +734,13 @@ func (p *Encoder) SetProps(props2 *EncProps) error {
 	if props.DictSize > kLzmaMaxHistorySize {
 		props.DictSize = kLzmaMaxHistorySize
 	}
-	if uint64(props.DictSize) > uint64(1)<<kDicLogSizeMaxCompress {
+	ws := wordSize(props.WordSize)
+	if uint64(props.DictSize) > uint64(1)<<dicLogSizeMaxCompress(ws) {
 		return ErrParam
+	}
+	if nlb := numLogBits(ws); nlb != p.numLogBits {
+		p.numLogBits = nlb
+		p.fastPosInit()
 	}
 	p.dictSize = props.DictSize
 	{
@@ -1754,7 +1780,6 @@ func NewEncoder() *Encoder {
 		props.Init()
 		_ = p.SetProps(&props)
 	}
-	p.fastPosInit()
 	initPriceTables(&p.probPrices)
 	p.litProbs = nil
 	p.saveState.litProbs = nil

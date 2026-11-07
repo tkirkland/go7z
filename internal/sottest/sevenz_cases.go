@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/tkirkland/go7z/internal/sot"
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
@@ -163,13 +164,32 @@ func SevenZCases(exe []byte) []SevenZCase {
 	return cases
 }
 
-// RunSevenZMatrix runs every container case as a parallel subtest.
-func RunSevenZMatrix(t *testing.T, root string) {
-	for _, c := range SevenZCases(SoTExe(t, root)) {
+// RunSevenZMatrix runs every container case for one lane as a parallel
+// subtest, then the large single-file cases of LargeCases (default
+// threads and -mmt1) one at a time.
+func RunSevenZMatrix(t *testing.T, root string, lane sot.Lane) {
+	for _, c := range SevenZCases(SoTExe(t, root, lane)) {
 		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
-			CheckSevenZ(t, root, t.TempDir(), c)
+			CheckSevenZ(t, root, lane, t.TempDir(), c)
 		})
+	}
+	for _, lc := range LargeCases() {
+		for _, mt1 := range []bool{false, true} {
+			lc, mt1 := lc, mt1
+			name := fmt.Sprintf("large_%s_mx%d", lc.Name, lc.Level)
+			args := []string{fmt.Sprintf("-mx=%d", lc.Level)}
+			opts := sevenzip.Options{Level: lc.Level}
+			if mt1 {
+				name += "_mt1"
+				args = append(args, "-mmt1")
+				opts.Threads = 1
+			}
+			t.Run(name, func(t *testing.T) {
+				files := []TreeFile{{"in/large.bin", lc.Input()}}
+				CheckSevenZ(t, root, lane, t.TempDir(), SevenZCase{Name: name, Files: files, Inputs: []string{"in/large.bin"}, Args: args, Opts: opts})
+			})
+		}
 	}
 }

@@ -15,11 +15,11 @@ import (
 	"github.com/tkirkland/go7z/sevenzip"
 )
 
-// TestPerfVsSoT times the module's writer against 7zr on the same
-// input and prints both. It is a measurement, not a check.
+// TestPerfVsSoT times the module's writer against the 64-bit SoT on
+// the same input and prints both. It is a measurement, not a check.
 func TestPerfVsSoT(t *testing.T) {
 	root := sottest.RepoRoot(t)
-	bin, err := sot.Binary(root)
+	bin, err := sot.Binary(root, sot.Lane64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestPerfVsSoT(t *testing.T) {
 		{"copy", []string{"-m0=Copy"}, sevenzip.Options{Method: sevenzip.Copy}},
 	}
 	sizes := []int{1 << 20, 16 << 20, 64 << 20}
-	fmt.Printf("%-22s %8s %10s %10s %7s\n", "config", "size", "7zr", "module", "ratio")
+	fmt.Printf("%-22s %8s %10s %10s %7s\n", "config", "size", "7za-x64", "module", "ratio")
 	for _, n := range sizes {
 		data := gen(n)
 		for _, c := range cfgs {
@@ -72,7 +72,9 @@ func TestPerfVsSoT(t *testing.T) {
 			}
 			d7 := time.Since(t0)
 
-			w := sevenzip.NewWriter(c.opts)
+			opts := c.opts
+			opts.WordSize = sot.Lane64.SizeT()
+			w := sevenzip.NewWriter(opts)
 			if err := w.AddPathIn(dir, "in.bin"); err != nil {
 				t.Fatal(err)
 			}

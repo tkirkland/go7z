@@ -6,15 +6,16 @@ import (
 	"testing"
 
 	"github.com/tkirkland/go7z/copycoder"
+	"github.com/tkirkland/go7z/internal/sot"
 )
 
 // CheckCopy encodes input with the module's Copy coder and compares with
-// the raw stream the SoT writes into .7z for the given arguments
+// the raw stream the lane's SoT writes into .7z for the given arguments
 // (either -m0=Copy at a level, or a bare -mx0, which selects Copy); then it
 // decodes the SoT's stream with the module.
-func CheckCopy(t *testing.T, root, dir string, input []byte, args ...string) {
+func CheckCopy(t *testing.T, root string, lane sot.Lane, dir string, input []byte, args ...string) {
 	t.Helper()
-	want := SevenZRawStream(t, root, dir, input, args...)
+	want := SevenZRawStream(t, root, lane, dir, input, args...)
 	got := copycoder.EncodeBytes(input)
 	if i := FirstDifference(got, want); i >= 0 {
 		t.Fatalf("%v: Copy stream differs from SoT: got %d bytes, want %d, first difference at %d", args, len(got), len(want), i)
@@ -25,10 +26,10 @@ func CheckCopy(t *testing.T, root, dir string, input []byte, args ...string) {
 	}
 }
 
-// RunCopyMatrix runs every Copy comparison as parallel subtests:
-// -m0=Copy at -mx0/1/5/9 and bare -mx0 on binary and text-like input, and
-// small inputs (1, 100, 4096 bytes).
-func RunCopyMatrix(t *testing.T, root string) {
+// RunCopyMatrix runs every Copy comparison for one lane as parallel
+// subtests: -m0=Copy at -mx0/1/5/9 and bare -mx0 on binary and text-like
+// input, and small inputs (1, 100, 4096 bytes).
+func RunCopyMatrix(t *testing.T, root string, lane sot.Lane) {
 	bin := DeterministicData(300000)
 	txt := TextLike(300000)
 	type c struct {
@@ -50,7 +51,7 @@ func RunCopyMatrix(t *testing.T, root string) {
 		cs := cs
 		t.Run(fmt.Sprintf("%s_n%d", cs.name, len(cs.input)), func(t *testing.T) {
 			t.Parallel()
-			CheckCopy(t, root, t.TempDir(), cs.input, cs.args...)
+			CheckCopy(t, root, lane, t.TempDir(), cs.input, cs.args...)
 		})
 	}
 }

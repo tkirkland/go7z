@@ -67,7 +67,8 @@ type Options struct {
 	SolidSize uint64 // -ms=s: solid block byte limit; 0 = default (observed, see solidSize)
 
 	NoHeaderCompression bool // -mhc=off
-	Threads             int  // -mmt; 0 = default. Only 1 changes the bytes (LZMA2 block threading off).
+	Threads             int  // -mmt; 0 = default (the number of logical processors, as 7-Zip). See Threads.
+	WordSize            int  // sizeof(size_t) of the 7-Zip build reproduced: lzma.WordSize32 or lzma.WordSize64; 0 = WordSize64
 	StoreCTime          bool // -mtc=on
 	StoreATime          bool // -mta=on
 	NoMTime             bool // -mtm=off
@@ -237,6 +238,7 @@ func (w *Writer) lzmaProps() (lzma.EncProps, uint32) {
 		p.Init()
 	}
 	p.Level = w.level()
+	p.WordSize = w.opts.WordSize
 	q := p
 	q.ReduceSize = ^uint64(0)
 	q.Normalize()
@@ -249,12 +251,12 @@ func (w *Writer) lzma2Props() (lzma.Lzma2EncProps, uint32) {
 		p = *w.opts.LZMA2Props
 	} else {
 		p.Init()
-		p.NumBlockThreadsMax = 2
-		if w.opts.Threads == 1 {
-			p.NumBlockThreadsMax = 1
-		}
 	}
 	p.LzmaProps.Level = w.level()
+	p.LzmaProps.WordSize = w.opts.WordSize
+	if w.opts.LZMA2Props == nil {
+		p.NumTotalThreads = Threads(w.opts.WordSize, w.opts.Threads, &p)
+	}
 	q := p.LzmaProps
 	q.ReduceSize = ^uint64(0)
 	q.Normalize()

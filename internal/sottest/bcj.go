@@ -10,12 +10,13 @@ import (
 	"github.com/tkirkland/go7z/internal/sot"
 )
 
-// SoTExe returns the bytes of the pinned SoT binary itself: a real
-// x86 PE image, used as filter input so that the branch converters see
-// genuine CALL/JMP instructions and not only random bytes.
-func SoTExe(t testing.TB, root string) []byte {
+// SoTExe returns the bytes of the lane's pinned SoT binary itself: a
+// real PE image (x86 or x64 code), used as filter input so that the
+// branch converters see genuine CALL/JMP instructions and not only
+// random bytes.
+func SoTExe(t testing.TB, root string, lane sot.Lane) []byte {
 	t.Helper()
-	bin, err := sot.Binary(root)
+	bin, err := sot.Binary(root, lane)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +45,14 @@ func BranchPattern(n int, seed uint32) []byte {
 }
 
 // CheckBCJ encodes input with the module's x86 converter and compares it
-// with the raw stream the SoT writes into a .7z for -m0=BCJ (the
+// with the raw stream the lane's SoT writes into a .7z for -m0=BCJ (the
 // folder's only coder is BCJ, so the packed stream is the filter
 // output); then it decodes the SoT's stream back to the input, with
 // the whole-buffer functions and with the streaming readers.
-func CheckBCJ(t *testing.T, root, dir string, input []byte, args ...string) {
+func CheckBCJ(t *testing.T, root string, lane sot.Lane, dir string, input []byte, args ...string) {
 	t.Helper()
 	full := append([]string{"-m0=BCJ"}, args...)
-	want := SevenZRawStream(t, root, dir, input, full...)
+	want := SevenZRawStream(t, root, lane, dir, input, full...)
 	got := bra.X86EncodeBytes(input)
 	if i := FirstDifference(got, want); i >= 0 {
 		t.Fatalf("%v: BCJ stream differs from SoT: got %d bytes, want %d, first difference at %d", full, len(got), len(want), i)
@@ -92,18 +93,19 @@ func (o *oddReader) Read(p []byte) (int, error) {
 	return o.r.Read(p[:n])
 }
 
-// RunBCJMatrix runs every BCJ comparison as parallel subtests: the
-// SoT binary (a real PE), deterministic binary and text-like inputs
-// across the filter coder's buffer boundaries, branch-opcode patterns,
-// and the sizes where the converter has nothing to do (0..5 bytes).
-func RunBCJMatrix(t *testing.T, root string) {
+// RunBCJMatrix runs every BCJ comparison for one lane as parallel
+// subtests: the lane's SoT binary (a real PE), deterministic binary and
+// text-like inputs across the filter coder's buffer boundaries,
+// branch-opcode patterns, and the sizes where the converter has nothing
+// to do (0..5 bytes).
+func RunBCJMatrix(t *testing.T, root string, lane sot.Lane) {
 	type c struct {
 		name  string
 		input []byte
 		args  []string
 	}
 	var cases []c
-	exe := SoTExe(t, root)
+	exe := SoTExe(t, root, lane)
 	cases = append(cases, c{"exe", exe, nil})
 	cases = append(cases, c{"exe_mx1", exe, []string{"-mx=1"}})
 	cases = append(cases, c{"exe_mx9", exe, []string{"-mx=9"}})
@@ -130,7 +132,7 @@ func RunBCJMatrix(t *testing.T, root string) {
 		cs := cs
 		t.Run(fmt.Sprintf("%s_n%d", cs.name, len(cs.input)), func(t *testing.T) {
 			t.Parallel()
-			CheckBCJ(t, root, t.TempDir(), cs.input, cs.args...)
+			CheckBCJ(t, root, lane, t.TempDir(), cs.input, cs.args...)
 		})
 	}
 }
