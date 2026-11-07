@@ -1,7 +1,9 @@
 # go7z
 
-A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2, ARM, ARMT
-and ARM64 filters and the 7z container, written to be byte-identical to
+A pure Go implementation of 7-Zip's LZMA, LZMA2, the BCJ, BCJ2, ARM, ARMT,
+ARM64, Swap2, Swap4 and Delta filters, 7zAES encryption and the 7z container,
+written to be
+byte-identical to
 7-Zip itself.
 
 The source of truth (SoT, the word used throughout this repo) is a pinned
@@ -19,7 +21,7 @@ commands and switches that `7za` lists, proven in two lanes: against the
 on `sizeof(size_t)`: the default dictionary at mx7 and above, and the
 LZMA2 block layout on inputs of hundreds of MB. Four codecs (PPC, IA64,
 SPARC, RISCV) are omitted by decision, leaving 92 lines. Current state:
-**32-bit lane 9 of 92; 64-bit lane 9 of 92**. Six lines (Deflate,
+**32-bit lane 13 of 92; 64-bit lane 13 of 92**. Six lines (Deflate,
 Deflate64, BZip2, Cab, gzip, bzip2) have no public-domain source and
 are counted as blocked.
 
@@ -33,9 +35,13 @@ are counted as blocked.
 | codec/ARM         | `bra`: ARM BL converter, 39 cases identical              |
 | codec/ARMT        | `bra`: Thumb BL converter, 48 cases identical            |
 | codec/ARM64       | `bra`: AArch64 BL/ADRP converter, 51 cases identical     |
-| format/7z         | `sevenzip`: 181 archives identical, all read back        |
+| codec/Swap2       | `bra`: byte-pair swap, 32 cases identical                |
+| codec/Swap4       | `bra`: four-byte reverse, 32 cases identical             |
+| codec/Delta       | `bra`: Delta filter, 194 cases identical                 |
+| codec/7zAES       | `sevenzip`: 49 archives identical given the SoT's IVs    |
+| format/7z         | `sevenzip`: 271 archives identical, all read back        |
 
-Everything else (Swap, Delta, encryption, xz/lzma formats, the CLI
+Everything else (AES256CBC, PPMD, the hashers, xz/lzma formats, the CLI
 commands and switches) is not done. See `HANDOFF.md`
 for the full checklist and the order of work.
 
@@ -46,7 +52,9 @@ for the full checklist and the order of work.
   `Lzma2Enc.c`, `LzmaDec.c`, `Lzma2Dec.c`).
 - `copycoder`: the Copy (store) coder.
 - `bra`: the branch converters: BCJ (x86), ported from `Bra86.c`, and
-  ARM, ARMT and ARM64, ported from `Bra.c`, as whole-buffer functions and as
+  ARM, ARMT and ARM64, ported from `Bra.c`, and the Swap2 and Swap4 byte
+  swaps (observed, no public-domain source) and Delta (ported from
+  `Delta.c`), as whole-buffer functions and as
   streaming readers; BCJ2, ported from `Bcj2Enc.c` and `Bcj2.c`, as the SDK's
   state machines plus whole-buffer and streaming four-stream encoders
   and a decoder.
@@ -76,7 +84,9 @@ for i, e := range a.Entries {
 ```
 
 `Options` covers the method (LZMA2, LZMA, Copy, or the filter alone),
-the BCJ, BCJ2, ARM, ARMT and ARM64 filters, level, solid mode and block size,
+the BCJ, BCJ2, ARM, ARMT, ARM64, Swap2, Swap4 and Delta filters (with the
+Delta distance), the 7zAES password and header encryption, level, solid mode
+and block size,
 header
 compression, threads and which timestamps to store.
 Raw codec streams are available through `lzma.EncodeBytes`,

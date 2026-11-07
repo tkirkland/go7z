@@ -11,7 +11,8 @@ deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
 work into two lanes, by the Claude Fable 5.1 session of 2026-11-06
 that built the two-lane harness, by the Claude Fable 5.1 session of
 2026-11-06 that ported BCJ2, and by the Claude Fable 5.1 session of
-2026-11-07 that ported ARM64. Each update integrates what that
+2026-11-07 that ported ARM64, Swap2, Swap4, Delta and 7zAES. Each update
+integrates what that
 session actually produced, and what the user established about why
 hand offs keep failing.
 
@@ -131,7 +132,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    mark is `blocked: LGPL-only source` until the user says what to do
    about that, and that mark is reported as such, never as done.
 
-## Session state (2026-11-07, after the ARM64 session)
+## Session state (2026-11-07, after the ARM64, Swap, Delta and 7zAES session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -158,7 +159,7 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. The six LGPL-only lines are
   in `parity.Blocked` and fail with that reason. Current baseline:
-  **32-bit lane 9 of 92; 64-bit lane 9 of 92** (both against `7za`,
+  **32-bit lane 13 of 92; 64-bit lane 13 of 92** (both against `7za`,
   large inputs included). A full run takes about 14 minutes for the
   small matrices plus the large cases (below).
 - `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
@@ -175,7 +176,10 @@ of 92`, then the omitted, blocked and failing lines by name. A line is
   (ARM: `bra/bra.go`, `Options.Filter = ARM`), `5d01c8d` (docs), `7b59af1`
   (ARMT: `ARMTConvert` in `bra/bra.go`, `Options.Filter = ARMT`),
   `2253a1d` (docs), the ARM64 commit (`bra/bra64.go`, `Options.Filter =
-  ARM64`), then
+  ARM64`), the Swap commit (`bra/swap.go`, `Options.Filter = Swap2`,
+  `Swap4`) and the Delta commit (`bra/delta.go`, `Options.Filter =
+  Delta`, `Options.DeltaDistance`) and the 7zAES commit (`sevenzip/aes.go`,
+  `Options.Password`, `EncryptHeader`, `Random`, `OpenWithPassword`), then
   this handoff revision.
 - `lzma/` package:
   - decoders: `lzmadec.go`, `lzma2dec.go` (`DecodeOneShot`,
@@ -200,7 +204,8 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `Archive.FolderCoders`, `FolderPackStreams`, `FolderUnpackSizes`),
   `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`, `RunCopyMatrix`,
   `RunBCJMatrix`, `RunBCJ2Matrix`, `RunARMMatrix`, `RunARMTMatrix`,
-  `RunARM64Matrix`
+  `RunARM64Matrix`, `RunSwapMatrix` (`Swap2Check`, `Swap4Check`),
+  `RunDeltaMatrix` (`DeltaCheck(delta)`), `AESCases`, `RunAESMatrix`
   (`CheckRisc` with a `RiscCheck` per RISC converter, `ARMPattern`,
   `ARMTPattern`, `ARM64Pattern`), `SevenZCases(exe)`,
   `RunSevenZMatrix`, `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
@@ -257,12 +262,13 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `Options`) is built from `DOC/7zFormat.txt` plus observation; there is
   no public-domain writer source. Both sides handle two-coder folders
   (method + filter, one bond). `number.go` has the variable-length number
-  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 181 cases
+  and bit vectors. Proof: `TestSoT7z` / parity `format/7z`, 271 cases
   byte-identical to both SoTs' archives (Copy, LZMA, LZMA2 at
   levels 1/5/9 and `-mx0`, sizes 1..2 MB, empty files and directories,
   nested trees, `-ms=off`, `-ms=1k`/`-ms=4m`, `-mhc=off`, `-mtc=on`,
   `-mtm=off`, `-mmt1`, name ordering, 31 BCJ cases, 32 BCJ2 cases,
-  20 ARM cases, 20 ARMT cases, 20 ARM64 cases) plus
+  20 ARM cases, 20 ARMT cases, 20 ARM64 cases, 20 Swap2 cases, 20 Swap4
+  cases, 25 Delta cases) plus
   the large cases, and the module reads every SoT archive back (names,
   sizes, CRCs, contents). The reader's `decodeFolder` walks the coder
   graph generically (the main coder's in-streams are pack streams or
@@ -396,6 +402,78 @@ Size` of `l -slt`), `SevenZFolder` (a single-file .7z's coder records
   `size mod 4` bytes unconverted; an ADRP at pc below 4096 is
   unchanged by construction (the page term is `(pc >> 12) << 3`). The
   reader accepts a 4-byte pc property as 7zDec.c does.
+- `bra/swap.go` (codec/Swap2, codec/Swap4): no public-domain source
+  (the C++ `ByteSwap.cpp` is LGPL); the semantics are observed on both
+  SoTs (2026-11-07, do not re-derive): Swap2 exchanges the two bytes
+  of every aligned pair, Swap4 reverses every aligned group of four,
+  the bytes after the last whole group are left as they are, identical
+  bytes in both lanes, coder records `03 02 03 02` and `03 02 03 04`
+  (3-byte ids 0x020302 and 0x020304, no properties), `-mf=Swap2` and
+  `-mf=Swap4` give the two-coder folder, a parameter after the method
+  name is rejected. `Swap2Convert`/`Swap4Convert` return the processed
+  count, `...Encode`/`...Decode`, `...Bytes`, `New...EncodeReader`/
+  `New...DecodeReader` over `convReader`. Proof: `TestEncodeSoTSwap2`
+  and `TestEncodeSoTSwap4` / parity `codec/Swap2`, `codec/Swap4`, 32
+  cases per filter per lane byte-identical to the SoT's packed stream
+  (the SoT binary, slices, every size 0..9, sizes around 64 KB,
+  constant and short-period inputs), whole-buffer and streaming, and
+  the SoT's streams decode back. `Options.Filter = Swap2`, `Swap4`, 20
+  container cases each.
+- `bra/delta.go` (codec/Delta): port of `C/Delta.c` (`DeltaState` with
+  `Init`, `Encode`, `Decode` carrying the last `delta` bytes between
+  calls; `DeltaEncode`/`DeltaDecode`, `...Bytes`,
+  `NewDeltaEncodeReader`/`NewDeltaDecodeReader` over `convReader`).
+  Proof: `TestEncodeSoTDelta` / parity `codec/Delta`, 194 cases per
+  lane byte-identical to the SoT's `-m0=Delta[:N]` packed stream at
+  distances 1, 2, 3, 4, 5, 8, 16, 255, 256 (the SoT binary, slices,
+  sizes below, at and just above the distance, sizes around 64 KB, 3
+  MB, constant and short-period inputs), whole-buffer and streaming,
+  and the SoT's streams decode back. `Options.Filter = Delta` with
+  `Options.DeltaDistance` (0 = 1), 25 container cases. Observed on both
+  SoTs (2026-11-07, do not re-derive): coder record `21 03 01 <N-1>`
+  (1-byte id 0x03 with a 1-byte property N-1), identical bytes in both
+  lanes, bare `-m0=Delta` is N = 1, `Delta:0` and `Delta:257` are
+  rejected, `-mf=Delta[:N]` gives the two-coder folder with the
+  for it.
+- `sevenzip/aes.go` (codec/7zAES): no public-domain coder source (the C++
+  `7zAes.cpp` is LGPL); the cipher and hash are the standard library's
+  and everything else is observed on both SoTs (2026-11-07, do not
+  re-derive):
+  1. Properties `53 0F <16-byte IV>`: NumCyclesPower 19 | 0x40 (IV
+     present), (saltSize-1)<<4 | (ivSize-1) with no salt; a random IV
+     per 7zAES coder (three folders give three IVs, BCJ2's four pack
+     streams four).
+  2. Key = SHA-256 over 2^19 rounds of (salt, password as UTF-16LE,
+     8-byte little-endian counter); confirmed by decrypting the SoT's
+     streams. Each pack stream is encrypted separately, zero-padded to
+     16; an empty stream stays empty; the coder's unpack size is the
+     unpadded length.
+  3. Folder record: the 7zAES coders come first, one per pack stream in
+     reverse stored order, coder j bound to the in-stream that was
+     stored pack stream k-1-j, old bonds shifted by k, new pack streams
+     k-1..0 (`folderShape.encrypted`). One stream: `7zAES, LZMA2`, bond
+     `01 00`. BCJ: `7zAES, LZMA2, BCJ`, bonds `01 00`, `02 01`. -mf=BCJ2:
+     four 7zAES (JUMP, CALL, RC, MAIN), two LZMA, LZMA2, BCJ2; bonds
+     `04 00 05 01 0a 02 06 03 09 04 08 05 07 06`; pack streams `03 02
+     01 00`. BCJ2 alone: four 7zAES (RC, JUMP, CALL, MAIN), BCJ2; bonds
+     `07 00 06 01 05 02 04 03`.
+  4. Without -mhe the header is compressed as usual and not encrypted.
+     -mhe: header folder `7zAES, LZMA` (bond `01 00`) when the header
+     would be compressed (two or more items, -mhc on), otherwise 7zAES
+     alone over the raw header (one item, or -mhc=off).
+  5. `-m0=7zAES` on the command line encrypts twice (`7zAES:19
+     7zAES:19`); `7zAES:c=N` and `-m0=AES256CBC` are rejected. The
+     module writes only `-p` and `-mhe`.
+  Proof: `TestSoT7zAES` / parity `codec/7zAES`, 49 cases per lane (every
+  folder shape, solid and non-solid trees, empty file, -mhc=off, -mhe
+  with one item and trees, four passwords including non-ASCII and over
+  64 bytes): with the SoT's IVs read from its archive and injected
+  through `Options.Random` the module's archive is byte-identical, the
+  SoT tests the module's archive with the password and rejects a wrong
+  one, and the module extracts the SoT's (`OpenWithPassword`,
+  `SetPassword`, `HeaderCoders`; `ErrPassword` without one). The key
+  derivation (0.3 s) is cached per password.
+  for it.
 - BCJ2 facts observed on both SoTs (2026-11-06, do not re-derive):
   1. `-m0=BCJ2` alone: one coder `14 03 03 01 1B 04 01` (four
      in-streams, one out) and four pack streams in the order MAIN, CALL,
@@ -554,15 +632,15 @@ checklist has a public-domain source file:
 | ARM, ARMT                     | `bra/`: ported (`C/Bra.c`)                 |
 | ARM64                         | `bra/`: ported (`C/Bra.c`)                 |
 | PPC, IA64, SPARC, RISCV       | omitted by the user (2026-11-06)           |
-| Delta                         | `C/Delta.c`                                |
-| Swap2, Swap4                  | trivial byte swap (no SDK file;            |
-|                               | semantics from `7zr` output)               |
-| 7zAES, AES256CBC              | `C/Aes.c`, `C/Sha256.c`; key derivation as |
-|                               | observed in the discarded repo's session   |
-|                               | (SHA-256 over salt+password(UTF-16LE)+     |
-|                               | counter, 2^19 rounds, salt 0 bytes, IV 16  |
-|                               | bytes by default): re-verify against this  |
-|                               | SoT before relying on it                   |
+| Delta                         | `bra/delta.go`: ported (`C/Delta.c`)       |
+| Swap2, Swap4                  | `bra/swap.go`: observed byte swap (no SDK  |
+|                               | file; semantics from both SoTs' output)   |
+| 7zAES                         | `sevenzip/aes.go`: stdlib AES and SHA-256; |
+|                               | properties, key derivation, padding and    |
+|                               | folder placement observed on both SoTs     |
+| AES256CBC                     | `C/Aes.c`; `-m0=AES256CBC` is rejected by  |
+|                               | the SoT in the 7z format (observed         |
+|                               | 2026-11-07); where it applies is the line  |
 | xz format                     | `C/XzEnc.c`, `C/Xz.c`, `C/XzDec.c`,        |
 |                               | `C/XzIn.c`, `C/XzCrc64.c`                  |
 | lzma, lzma86 formats          | `C/Lzma86Enc.c`, `C/Lzma86Dec.c` and the   |
@@ -647,11 +725,24 @@ box is ticked only when both lanes are done.
 - PPC, IA64, SPARC, RISCV: omitted by the user on 2026-11-06 ("omit
   ppc, ia64, sparc, riscv"). Not counted in either lane; TestParity
   skips them (`omitted` in `parity/parity.go`) and the total is 80.
-- [ ] Swap2: 32 not done; 64 not done
-- [ ] Swap4: 32 not done; 64 not done
-- [ ] Delta: 32 not done; 64 not done
-- [ ] 7zAES: 32 not done; 64 not done
-- [ ] AES256CBC (`-m0=AES256CBC` as a coder; same cipher as 7zAES
+- [x] Swap2: 32 done: `TestEncodeSoTSwap2/32` (parity key `codec/Swap2`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTSwap2/64`
+- [x] Swap4: 32 done: `TestEncodeSoTSwap4/32` (parity key `codec/Swap4`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTSwap4/64`
+- [x] Delta: 32 done: `TestEncodeSoTDelta/32` (parity key `codec/Delta`;
+      container cases in `TestSoT7z/32`); 64 done: `TestEncodeSoTDelta/64`
+- [x] 7zAES: 32 done: `TestSoT7zAES/32` (parity key `codec/7zAES`, the
+      criterion of the "What parity means" section: identical given the
+      SoT's IVs, cross-extraction both ways); 64 done: `TestSoT7zAES/64`
+- [ ] AES256CBC: 32 not done; 64 not done. Observed 2026-11-07 on both
+      SoTs: `-m0=AES256CBC` (and `-m1=`) is rejected in 7z, zip and xz
+      ("The parameter is incorrect"); the codec is reachable only as
+      zip's `-pX -mem=AES256`, which `l -slt` reports as `AES-256` (the
+      WinZip scheme). There is no CLI situation in which the SoT writes
+      or reads an AES256CBC coder record, so the line has no
+      byte-level criterion of its own; it is proven, if at all, inside
+      the zip format line. Needs the user's ruling. Former text:
+      (`-m0=AES256CBC` as a coder; same cipher as 7zAES
       without key derivation): 32 not done; 64 not done
 - [ ] PPMD (`C/Ppmd7.c`, `C/Ppmd7Enc.c`): 32 not done; 64 not done
 - [ ] Deflate: 32 blocked: LGPL-only source; 64 blocked: LGPL-only source
@@ -762,7 +853,8 @@ with their source situation.
 Top to bottom. No reordering by what seems important. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
-lines after them. Next is Swap2, then down the list, each line in both
+lines after them. Next is PPMD (AES256CBC awaits the user's ruling, see its
+line), then down the list, each line in both
 lanes before the next line: port the public-domain source faithfully,
 add its line to the parity test, run both SoTs, mark both lanes. Commit
 per line. Never spend a session on anything that marks no line.
