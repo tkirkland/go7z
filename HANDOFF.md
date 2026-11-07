@@ -1,4 +1,4 @@
-# Handoff: parity with the 7-Zip 26.05 SoTs, 32-bit and 64-bit
+# Hand off: parity with the 7-Zip 26.05 SoTs, 32-bit and 64-bit
 
 SoT means source of truth: the pinned 7-Zip binary whose bytes define
 what is correct. The user chose the term on 2026-11-06; use it, not
@@ -11,7 +11,7 @@ deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
 work into two lanes, and by the Claude Fable 5.1 session of 2026-11-06
 that built the two-lane harness. Each update integrates what that
 session actually produced, and what the user established about why
-handoffs keep failing.
+hand offs keep failing.
 
 Read this before touching anything. The first half is about how you fail.
 The second half is the checklist. Do not skip the first half; it is the
@@ -151,7 +151,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   21 codecs + 5 hashers + 11 commands + 47 switches) minus the four
   omitted codecs = 92, as subtests `TestParity/32/<key>` and
   `TestParity/64/<key>`, and prints `parity 32: N of 92`, `parity 64: N
-  of 92`, then the omitted, blocked and failing lines by name. A line is
+of 92`, then the omitted, blocked and failing lines by name. A line is
   registered by adding its key to the `checks` map in an `init()` of a
   `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
   check runs in both lanes with `env.Lane`. The six LGPL-only lines are
@@ -183,10 +183,10 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
     2^28, 2^28; always reduced to the input size (`reduceSize`).
 - `internal/sottest/`: helpers shared by SoT tests and parity checks:
   `DeterministicData`, `TextLike`, `BranchPattern`, `SoTExe(t, root,
-  lane)` (the lane's SoT's own bytes as a real PE input), `SoTXz`,
+lane)` (the lane's SoT's own bytes as a real PE input), `SoTXz`,
   `XzSingleBlock`, `SevenZRawStream` (the raw packed stream of a
   single-file .7z starts at offset 32 and its length is the `Packed
-  Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
+Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
   `RunCopyMatrix`, `RunBCJMatrix`, `SevenZCases(exe)`, `RunSevenZMatrix`,
   `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
   it; the `Test...SoT...` tests in `lzma/`, `copycoder/`, `bra/` and
@@ -485,7 +485,7 @@ box is ticked only when both lanes are done.
       mx7/8/9 (lane item 2): done (`lzma.EncProps.WordSize`; proven by
       the large cases of `TestEncodeSoTLZMA/64`, `TestEncodeSoTLZMA2/64`,
       `TestSoT7z/64`)
-- [x] Every sottest matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
+- [x] Every sot test matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
       `RunCopyMatrix`, `RunBCJMatrix`, `RunSevenZMatrix`) runs per lane,
       with at least one input above 256 MB at mx7..9 so the unreduced
       dictionaries are reached, and one at mx6 with default threads so
