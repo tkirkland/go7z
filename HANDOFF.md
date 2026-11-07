@@ -689,6 +689,16 @@ text you are wrong, and the user pays for it.
    If a lane cannot be run, say so with the count at 0; never let one
    lane's number stand for both.
 
+9. **You run line after line in one session.** The 2026-11-07 session did
+   eight lines in two hours without stopping. Every tool call resubmits the
+   whole transcript, so by the eighth line each step cost hundreds of
+   thousands of tokens of prefill; the user's words: "each check == line ==
+   session so that you arent resubmitting 800k per prefill, you have
+   basically used an entire week of fable in two hours". Rule: one
+   checklist line per session. Port it, prove it in both lanes, commit it,
+   update this handoff, print the report, and stop. "continue" or "next"
+   means the next line in a new session, never a second line in this one.
+
 ## What "parity" means here, mechanically
 
 Parity is defined by the SoT binaries, not by anyone's description of
@@ -976,7 +986,9 @@ with their source situation.
 
 ## Order of work
 
-Top to bottom. No reordering by what seems important. The harness
+Top to bottom. No reordering by what seems important. One line per
+session (failure 9): after the line is done in both lanes and committed,
+update this file, report, and stop. The harness
 section is done. The lines marked `blocked: LGPL-only source` are
 skipped when reached and reported as blocked; they do not stop the
 lines after them. Next is the xz format (AES256CBC awaits the user's ruling, see its
