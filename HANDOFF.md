@@ -6,11 +6,12 @@ what is correct. The user chose the term on 2026-11-06; use it, not
 
 Written by the Claude that built go7z on 2026-11-04/05, updated by the
 deepseek-v4-pro session of 2026-11-06, by the Claude Fable 5.1 session of
-2026-11-06 that ported the encoder, and again by the Claude Fable 5.1
-session of 2026-11-06 that ported BCJ and then, on the user's decision,
-split the work into two lanes. Each update integrates what that session
-actually produced, and what the user established about why handoffs
-keep failing.
+2026-11-06 that ported the encoder, by the Claude Fable 5.1 session of
+2026-11-06 that ported BCJ and then, on the user's decision, split the
+work into two lanes, and by the Claude Fable 5.1 session of 2026-11-06
+that built the two-lane harness. Each update integrates what that
+session actually produced, and what the user established about why
+handoffs keep failing.
 
 Read this before touching anything. The first half is about how you fail.
 The second half is the checklist. Do not skip the first half; it is the
@@ -53,25 +54,25 @@ copy is at `tools/tmp/7z2605-extra.7z`). The user chose `7za` on
 32-bit `7za.exe`: `7zr` does not list those 12 lines, and the two lanes
 must walk the same list.
 
-Lane 32: `7za.exe` from the package root, to be placed as
-`tools/sot/7za-x86.exe`, SHA-256
-`357929ec748d00728c64dd2e7aa0069258f40847c1410014bb60d22eb9ec75d5`,
-version line `7-Zip (a) 26.05 (x86) : ...` (record it when placed).
+Lane 32: `tools/sot/7za-x86.exe` (`7za.exe` from the package root),
+SHA-256 `357929ec748d00728c64dd2e7aa0069258f40847c1410014bb60d22eb9ec75d5`,
+version line `7-Zip (a) 26.05 (x86) : Copyright (c) 1999-2026 Igor Pavlov
+: 2026-10-21`.
 
-Lane 64: `x64/7za.exe`, to be placed as `tools/sot/7za-x64.exe`, SHA-256
+Lane 64: `tools/sot/7za-x64.exe` (`x64/7za.exe`), SHA-256
 `7ddf0a3bc451e166679296be630d6f0573eb386159c04184761c43020c484291`,
 version line `7-Zip (a) 26.05 (x64) : Copyright (c) 1999-2026 Igor Pavlov
 : 2026-10-21`.
 
-Until the harness lines are done, the 32-bit proofs in this repo stand
-against `tools/sot/7zr.exe` (release asset `7zr.exe`, SHA-256
-`9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`,
-version line `7-Zip (r) 26.05 (x86) : Igor Pavlov : Public domain :
-2026-10-21`). The 32-bit `7za.exe` writes the same bytes as `7zr.exe` on
-the cases checked (the 600 KB PE at mx1/5/9, identical archives), so
-those proofs are expected to carry over; re-running them against
-`7za-x86.exe` is a harness line, not an assumption. The package also
-holds `arm64/7za.exe` (SHA-256
+Both are placed, hashed and version-checked (2026-11-06, harness
+session): `tools/fetch-sot.ps1` fetches `7zr.exe` and the package,
+verifies both, extracts the two binaries with `7zr.exe` and verifies
+them; `internal/sot.Binary(root, lane)` re-verifies hash and version
+line before any test uses a binary. `tools/sot/7zr.exe` (release asset
+`7zr.exe`, SHA-256
+`9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`) stays
+as the extraction tool only; no proof runs against it any more. The
+package also holds `arm64/7za.exe` (SHA-256
 `86a2064dfe2a362f03e3c95e577cab88a9d2caaca9e442520046a050044d2d4d`);
 ARM64 is not a lane, the user has not asked for it.
 
@@ -91,17 +92,30 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    says for `sizeof(size_t) == 8`: on 300 MB of zeros the coder record
    is 2^26 for mx6 on both builds, then 32-bit stays at 2^26 for mx7/8/9
    while 64-bit writes 2^27 (mx7), 2^28 (mx8), 2^28 (mx9). The port
-   keys this on `sotSizeT` in `lzma/lzmaenc.go` (4 today); it has to
-   become a per-encoder setting chosen by the lane.
+   keys this on `lzma.EncProps.WordSize` (`WordSize32` = 4 or
+   `WordSize64` = 8; 0 means 64, the build real users run), which also
+   sets `kNumLogBits` and so the largest accepted dictionary (2^27 on
+   32-bit, unbounded on 64-bit); `sevenzip.Options.WordSize` passes it
+   through, and every matrix sets it from the lane.
 3. The default LZMA2 block layout differs at large inputs even with the
-   same dictionary: 300 MB of zeros at mx6 gives different bytes with
-   default threads but identical bytes with `-mmt1` and with `-mmt2`;
-   at mx5 (300 MB) and at every level on 64 MB the default is identical.
-   That is the C++ layer limiting block threads by memory on x86. The
-   32-bit "default = -mmt1 = -mmt2" fact below holds for the inputs it was
-   observed on; on the 64-bit lane the default thread count has to be
-   reproduced by observation at mx6 and above on inputs of hundreds of
-   MB.
+   same dictionary. Observed on 300 MB and 600 MB of zeros (harness
+   session, 32 logical processors, 64 GB RAM):
+   - `-mmt N` is the total thread count; the SDK's
+     `Lzma2EncProps_Normalize` makes block threads = N / LZMA threads
+     (2 at the levels with the bt4 match finder), so `-mmt2` and `-mmt3`
+     give one block thread (solid) and `-mmt4`, `-mmt8`, `-mmt16`,
+     `-mmt32` give two or more (blocks of 4 x dict), on both builds.
+     Explicit `-mmt` is never reduced.
+   - The default is the number of logical processors (split on both
+     builds), except that the x86 build reduces its default to one block
+     thread from a 36 MB dictionary up: `-md=35m` splits, `-md=36m` is
+     solid; so x86 mx5 (32 MB) splits and mx6..9 (64 MB) are solid,
+     while x64 splits at every level and at `-md` up to 1024m.
+   - This is the LGPL C++ layer limiting memory on x86; no public-domain
+     C file holds the estimate, so the module pins the observed boundary
+     (`x86DefaultSolidDict` in `sevenzip/threads.go`, `sevenzip.Threads`).
+     The boundary may move with the machine's processor count; it was
+     observed only on this machine.
 4. xz: 300 MB of zeros at mx1 and mx5 (default and `-mmt1`) is identical
    in both builds; mx9 differs (the dictionary, item 2: 32-bit 45932
    bytes, 64-bit 46040).
@@ -115,7 +129,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
    mark is `blocked: LGPL-only source` until the user says what to do
    about that, and that mark is reported as such, never as done.
 
-## Session state (2026-11-06, after the BCJ session and the lane decision)
+## Session state (2026-11-06, after the two-lane harness session)
 
 - Repo: branch `main`, remote `origin` = github.com/tkirkland/go7z
   (public). History before `e5c143d` on the old remote is not a
@@ -125,28 +139,28 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
   `go version` fails.
 - Pinned source: `reference/7zip` = git tag `26.05`
   (commit `b88c6bc09339de32f7d18bbab900686b244f42ba`), gitignored.
-- `tools/fetch-sot.ps1` fetches and verifies the 32-bit SoT only.
-  The 64-bit SoT is not fetched, not placed, not hashed by any code
-  yet; `testdata/SOT.md` records only the 32-bit provenance. That is
-  the first harness line below.
-- Parity fixtures committed: `testdata/parity/7zr-i.txt` (1072 bytes),
-  `testdata/parity/7zr-usage.txt` (2902 bytes), generated from the
-  32-bit SoT. No 64-bit fixtures exist yet.
-- TestParity: package `parity`, `//go:build sot`. It walks 84 lines
-  (6 formats + 17 codecs + 3 hashers + 11 commands + 47 switches) against
-  the 32-bit SoT only, verifies that SoT's hash and that the
-  fixtures equal its live output, and prints `parity: N of M`. A line is
+- `tools/fetch-sot.ps1` fetches, verifies and places both lane
+  binaries (lane section); `testdata/SOT.md` records both.
+- Parity fixtures committed, generated from the verified binaries:
+  `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`, `7za-x64-i.txt`,
+  `7za-x64-usage.txt` (the two builds differ only in the version line).
+  The `7zr` fixtures are gone.
+- TestParity: package `parity`, `//go:build sot`. For each lane it
+  verifies the lane's binary (hash and version line) and that the
+  fixtures equal its live output, then walks the 96 lines (12 formats +
+  21 codecs + 5 hashers + 11 commands + 47 switches) minus the four
+  omitted codecs = 92, as subtests `TestParity/32/<key>` and
+  `TestParity/64/<key>`, and prints `parity 32: N of 92`, `parity 64: N
+  of 92`, then the omitted, blocked and failing lines by name. A line is
   registered by adding its key to the `checks` map in an `init()` of a
-  `parity/*_test.go` file (see `parity/codec_lzma_test.go`). It has no
-  lane dimension yet. With `7za` as the SoT the list is 96 lines (6+6
-  formats, 17+4 codecs, 3+2 hashers, 11 commands, 47 switches) minus the
-  four codecs the user omitted (PPC, IA64, SPARC, RISCV): 92 per lane.
-  The test still walks the 80-line `7zr` list until the harness lines
-  are done. Current baseline: **32-bit lane 5 of 92 (proven against
-  `7zr`, re-proof against `7za-x86` pending); 64-bit lane 0 of 92 (no
-  harness)**.
-- `internal/sot`: `Binary(root)` finds and hash-verifies `7zr.exe`;
-  `Run`, `RunBinary`. Single SoT, no lane parameter.
+  `parity/*_test.go` file (see `parity/codec_lzma_test.go`); the same
+  check runs in both lanes with `env.Lane`. The six LGPL-only lines are
+  in `parity.Blocked` and fail with that reason. Current baseline:
+  **32-bit lane 5 of 92; 64-bit lane 5 of 92** (both against `7za`, large inputs included). A full run takes about 12 minutes for the
+  small matrices plus the large cases (below).
+- `internal/sot`: `Lane` (`Lane32`, `Lane64`, `Lanes`, `SizeT()`),
+  `Binary(root, lane)` verifies hash and version line (cached per
+  process), `Run(dir, lane, args...)`, `RunBinary`.
 - Commits: `e5c143d` (harness, fixtures, SoT verifier),
   `7eeb1b3` (LZMA/LZMA2 decoders), `49f8072` (LZMA encoder, codec/LZMA),
   `998f516` (LZMA2 encoder, codec/LZMA2), `106f608` (Copy coder),
@@ -162,23 +176,29 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
     `lzma2enc.go` (port of `Lzma2Enc.c`: `Lzma2EncProps`, `Lzma2Encoder`,
     `Encode(w, r)`, `EncodeBytes`, `WriteProperties`, block splitting).
   - The two places the C code depends on `sizeof(size_t)` (default dict
-    per level, `kNumLogBits`) follow the 32-bit build: `sotSizeT = 4`
-    in `lzmaenc.go`. 32-bit dict per level, 7z and xz: mx1 2^18, mx2
-    2^20, mx3 2^22, mx4 2^24, mx5 2^25, mx6..9 2^26, always reduced to
-    the input size (`reduceSize`). 64-bit: the same through mx6, then
-    2^27, 2^28, 2^28 (observed, lane item 2).
-  - Three files (`lzfind.go`, `lzma2enc.go`, `lzmaenc.go`) are not
-    gofmt-clean. They were left as they are; formatting them is a
-    no-behaviour-change commit if anyone wants it.
+    per level, `kNumLogBits`) follow `EncProps.WordSize` (lane item 2).
+    Dict per level, 7z and xz: mx1 2^18, mx2 2^20, mx3 2^22, mx4 2^24,
+    mx5 2^25, mx6 2^26, then 32-bit 2^26 for mx7..9 and 64-bit 2^27,
+    2^28, 2^28; always reduced to the input size (`reduceSize`).
 - `internal/sottest/`: helpers shared by SoT tests and parity checks:
-  `DeterministicData`, `TextLike`, `BranchPattern`, `SoTExe` (the
-  32-bit SoT's own bytes as a real PE input), `SoTXz`,
+  `DeterministicData`, `TextLike`, `BranchPattern`, `SoTExe(t, root,
+  lane)` (the lane's SoT's own bytes as a real PE input), `SoTXz`,
   `XzSingleBlock`, `SevenZRawStream` (the raw packed stream of a
   single-file .7z starts at offset 32 and its length is the `Packed
   Size` of `l -slt`), `ParseMethod`, `RunLZMAMatrix`, `RunLZMA2Matrix`,
-  `RunCopyMatrix`, `RunBCJMatrix`, `SevenZCases(exe)`, `RunSevenZMatrix`.
-  All of them run the 32-bit SoT through `sot.Binary(root)`.
-- Proof of the encoders on the 32-bit lane (all byte-identical):
+  `RunCopyMatrix`, `RunBCJMatrix`, `SevenZCases(exe)`, `RunSevenZMatrix`,
+  `LargeCases`. Every matrix takes a `sot.Lane` and sets `WordSize` from
+  it; the `Test...SoT...` tests in `lzma/`, `copycoder/`, `bra/` and
+  `sevenzip/` run each matrix once per lane as subtests `32` and `64`.
+- Large inputs (`sottest.LargeCases`): 300 MB of zeros at mx6..9, run in
+  the LZMA matrix (mx6..9), the LZMA2 matrix (default threads and
+  `-mmt1`) and the 7z matrix (default threads and `-mmt1`), per lane.
+  They reach the unreduced 2^27/2^28 dictionaries (lane item 2) and the
+  default block layout (lane item 3). The Go LZMA2 encoder takes about
+  16 s per 300 MB case at mx9; the large cases add roughly 12 minutes
+  to the parity run.
+- Proof of the encoders (all byte-identical in both lanes unless a mark
+  below says otherwise):
   - `TestEncodeSoTLZMA` / parity `codec/LZMA`: 26 cases, raw LZMA
     streams from `.7z -m0=LZMA:<params>` with mf=bt2/bt3/bt4/bt5/hc4/hc5,
     a=0, fb=5/273, mc=1/1000, lc/lp/pb extremes, d=4k/16k, mt=1, levels
@@ -193,7 +213,7 @@ What the 64-bit lane changes, observed on 2026-11-06 (do not re-derive):
      (9 inputs x levels, inputs up to a few MB), so `LzFind.c`
      (single-threaded) is the reference; `LzFindMt.c` is not needed for
      identity. At 300 MB and mx6+ the default differs between builds
-     (lane item 3), so the thread default is a per-lane observation.
+     (lane item 3, now pinned in `sevenzip.Threads`).
   2. `7zr a -tlzma` prints `System ERROR: Not implemented` (exit 2). The
      SoT cannot create `.lzma`; the lzma format line is read-side plus
      that same refusal on create. Whether `7za` x64 behaves the same is
@@ -358,9 +378,8 @@ them:
 - `7za` with no arguments lists the commands and switches.
 - Each lane has its own pair of fixtures generated from its binary:
   `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`, `7za-x64-i.txt`,
-  `7za-x64-usage.txt` (not yet generated; the committed fixtures today
-  are `7zr-i.txt` and `7zr-usage.txt` from `7zr`). The two builds' lists
-  differ only in the version line and the `Usage:` name.
+  `7za-x64-usage.txt`. The two builds' lists differ only in the version
+  line.
 
 `go test -tags sot -run TestParity ./...` walks those lists: 96 lines
 (12 formats + 21 codecs + 5 hashers + 11 commands + 47 switches) minus
@@ -369,8 +388,7 @@ RISCV), so 92 per lane.
 Each line is a pass or a fail in each lane. A line the module rejects is a
 fail. A line where the module's bytes differ from that lane's SoT is a
 fail. The test prints `parity 32: N of M` and `parity 64: N of M` at the
-end (today it prints one unlabelled `parity: N of M` for the 32-bit lane
-against the 80-line `7zr` list). Parity is `M of M` in both lanes.
+end. Parity is `M of M` in both lanes.
 Omitted lines are listed by name in the output, never counted as
 passes; lines blocked by licensing are failures with that reason. Report both numbers and nothing
 softer.
@@ -439,46 +457,52 @@ lines.
 
 Each line carries two marks, `32` and `64`. Mark a lane `done` with the
 test name that proves it in that lane, or `not done`. Nothing else. The
-box is ticked only when both lanes are done. Today no 64-bit lane has
-run, so every box is open.
+box is ticked only when both lanes are done.
 
 ### Harness (the 64-bit lane does not exist until these are done)
 
-- [ ] Both SoTs placed and pinned: `tools/fetch-sot.ps1` fetches
+- [x] Both SoTs placed and pinned: `tools/fetch-sot.ps1` fetches
       `7z2605-extra.7z` (SHA-256 in the lane section), extracts `7za.exe`
       and `x64/7za.exe` with the verified `7zr.exe`, verifies their
       SHA-256s, places `tools/sot/7za-x86.exe` and `tools/sot/7za-x64.exe`;
-      `testdata/SOT.md` records both: not done
-- [ ] `internal/sot` takes a lane (`Binary(root, lane)`, `Run`,
-      `RunBinary`) and verifies each lane's hash and version line: not
-      done
-- [ ] Fixtures `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`,
+      `testdata/SOT.md` records both: done (script run 2026-11-06, both
+      verified)
+- [x] `internal/sot` takes a lane (`Binary(root, lane)`, `Run`,
+      `RunBinary`) and verifies each lane's hash and version line: done
+      (TestParity verifies both at the start of each lane)
+- [x] Fixtures `testdata/parity/7za-x86-i.txt`, `7za-x86-usage.txt`,
       `7za-x64-i.txt`, `7za-x64-usage.txt` committed and checked against
-      live output like the `7zr` ones: not done
-- [ ] TestParity walks every line in both lanes, subtests `32/<key>` and
+      live output: done (`TestParity`)
+- [x] TestParity walks every line in both lanes, subtests `32/<key>` and
       `64/<key>`, prints `parity 32: N of 92` and `parity 64: N of 92`,
-      lists omitted and blocked lines by name: not done
-- [ ] The five lines proven against `7zr` (Copy, LZMA, LZMA2, BCJ,
-      format/7z) re-run against `7za-x86.exe` and pass: not done
-- [ ] `sotSizeT` becomes a per-encoder build setting (32 or 64) that
+      lists omitted and blocked lines by name: done (`TestParity`)
+- [x] The five lines proven against `7zr` (Copy, LZMA, LZMA2, BCJ,
+      format/7z) re-run against `7za-x86.exe` and pass: done
+      (`TestParity/32`, 5 of 92)
+- [x] `sotSizeT` becomes a per-encoder build setting (32 or 64) that
       the lane selects; the 64-bit setting reproduces 2^27/2^28/2^28 at
-      mx7/8/9 (lane item 2): not done
-- [ ] Every sottest matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
+      mx7/8/9 (lane item 2): done (`lzma.EncProps.WordSize`; proven by
+      the large cases of `TestEncodeSoTLZMA/64`, `TestEncodeSoTLZMA2/64`,
+      `TestSoT7z/64`)
+- [x] Every sottest matrix (`RunLZMAMatrix`, `RunLZMA2Matrix`,
       `RunCopyMatrix`, `RunBCJMatrix`, `RunSevenZMatrix`) runs per lane,
       with at least one input above 256 MB at mx7..9 so the unreduced
       dictionaries are reached, and one at mx6 with default threads so
-      the block layout (lane item 3) is reached: not done
+      the block layout (lane item 3) is reached: done
+      (`sottest.LargeCases`, 300 MB of zeros at mx6..9 in the LZMA, LZMA2
+      and 7z matrices; Copy and BCJ have no word-size or thread
+      dependence and keep their 3 MB inputs)
 
 ### Codecs (`7za i`; 17 counted, 4 omitted)
 
-- [ ] Copy: 32 done: `TestEncodeSoTCopy` (parity key `codec/Copy`);
-      64 not done
-- [ ] LZMA: 32 done: `TestEncodeSoTLZMA` (parity key `codec/LZMA`);
-      64 not done
-- [ ] LZMA2: 32 done: `TestEncodeSoTLZMA2` (parity key `codec/LZMA2`);
-      64 not done
-- [ ] BCJ: 32 done: `TestEncodeSoTBCJ` (parity key `codec/BCJ`);
-      64 not done
+- [x] Copy: 32 done: `TestEncodeSoTCopy/32` (parity key `codec/Copy`);
+      64 done: `TestEncodeSoTCopy/64`
+- [x] LZMA: 32 done: `TestEncodeSoTLZMA/32` (parity key `codec/LZMA`);
+      64 done: `TestEncodeSoTLZMA/64`
+- [x] LZMA2: 32 done: `TestEncodeSoTLZMA2/32` (parity key `codec/LZMA2`);
+      64 done: `TestEncodeSoTLZMA2/64`
+- [x] BCJ: 32 done: `TestEncodeSoTBCJ/32` (parity key `codec/BCJ`);
+      64 done: `TestEncodeSoTBCJ/64`
 - [ ] BCJ2: 32 not done; 64 not done
 - [ ] ARM: 32 not done; 64 not done
 - [ ] ARMT: 32 not done; 64 not done
@@ -518,7 +542,8 @@ run, so every box is open.
 
 ### Formats (`7za i`, `-t`)
 
-- [ ] 7z: 32 done: `TestSoT7z` (parity key `format/7z`); 64 not done
+- [x] 7z: 32 done: `TestSoT7z/32` (parity key `format/7z`);
+      64 done: `TestSoT7z/64`
 - [ ] xz (`-txz`, with `-mf` filters, `-mmt` block splitting, check type;
       block splitting is lane dependent, lane items 3 and 4): 32 not
       done; 64 not done
@@ -594,17 +619,13 @@ with their source situation.
 
 ## Order of work
 
-Top to bottom. No reordering by what seems important. The harness section
-comes first, because without it the 64-bit lane cannot mark anything.
-Then the four lines already done on the 32-bit lane (Copy, LZMA, LZMA2,
-BCJ) and format/7z get their 64-bit mark, which is where the mx7..9
-dictionary difference and the mx6 block layout are proven. The lines
-marked `blocked: LGPL-only source` are skipped when reached and reported
-as blocked; they do not stop the lines after them. Then BCJ2 and
-down the list, each line in both lanes before the next line: port the
-public-domain source faithfully, add its line to the parity test, run
-both SoTs, mark both lanes. Commit per line. Never spend a session on
-anything that marks no line.
+Top to bottom. No reordering by what seems important. The harness
+section is done. The lines marked `blocked: LGPL-only source` are
+skipped when reached and reported as blocked; they do not stop the
+lines after them. Next is BCJ2, then down the list, each line in both
+lanes before the next line: port the public-domain source faithfully,
+add its line to the parity test, run both SoTs, mark both lanes. Commit
+per line. Never spend a session on anything that marks no line.
 
 ## Reporting
 
