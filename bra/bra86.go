@@ -250,37 +250,55 @@ func (x *x86Reader) Read(p []byte) (int, error) {
 			x.err = io.EOF
 			return 0, io.EOF
 		}
-		// Move the tail to the front and fill the buffer.
-		tail := copy(x.buf, x.buf[x.n:x.end])
-		x.out, x.n, x.end = 0, 0, tail
-		for x.end < len(x.buf) && !x.eof {
-			m, err := x.r.Read(x.buf[x.end:])
-			x.end += m
-			if err == io.EOF {
-				x.eof = true
-			} else if err != nil {
-				x.err = err
-				x.eof = true
-			}
-			if m > 0 || err != nil {
-				break
-			}
-		}
+		x.fillBuf()
 		if x.err != nil && x.end == 0 {
 			return 0, x.err
 		}
-		processed := X86Convert(x.buf[:x.end], x.pc, &x.state, x.encoding)
-		x.pc += uint32(processed)
-		x.n = processed
-		if x.err != nil {
-			// Return what was converted, then the error.
-			x.n = x.end
-			if x.n == 0 {
-				return 0, x.err
-			}
+		x.convert()
+		if x.applyErr() {
+			return 0, x.err
 		}
 	}
 	m := copy(p, x.buf[x.out:x.n])
 	x.out += m
 	return m, nil
+}
+
+// fillBuf shifts the unprocessed tail down to the buffer start and reads
+// more input until the buffer is full, EOF was seen or an error arrived.
+func (x *x86Reader) fillBuf() {
+	tail := copy(x.buf, x.buf[x.n:x.end])
+	x.out, x.n, x.end = 0, 0, tail
+	for x.end < len(x.buf) && !x.eof {
+		m, err := x.r.Read(x.buf[x.end:])
+		x.end += m
+		if err == io.EOF {
+			x.eof = true
+		} else if err != nil {
+			x.err = err
+			x.eof = true
+		}
+		if m > 0 || err != nil {
+			break
+		}
+	}
+}
+
+// convert runs the converter over the filled buffer and advances the
+// virtual program counter by the number of bytes it processed.
+func (x *x86Reader) convert() {
+	processed := X86Convert(x.buf[:x.end], x.pc, &x.state, x.encoding)
+	x.pc += uint32(processed)
+	x.n = processed
+}
+
+// applyErr forces the whole buffer through the converter when the stream
+// already ended: nothing may stay unconverted past the error. It returns
+// true when the buffer is empty and the error must be reported now.
+func (x *x86Reader) applyErr() bool {
+	if x.err == nil {
+		return false
+	}
+	x.n = x.end
+	return x.n == 0
 }
