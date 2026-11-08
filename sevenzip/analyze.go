@@ -2,6 +2,7 @@ package sevenzip
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -13,19 +14,19 @@ import (
 // analysis level -myx), reproduced from observation on both SoTs
 // (2026-11-07; the C++ 7zUpdate.cpp is LGPL and not ported):
 //
-//   - Which files are analysed depends on -myx (default 5): 0..4 none;
+//   - Which files are analyzed depends on -myx (default 5): 0..4 none;
 //     5 and 6 files whose extension (case-insensitive) is exe, dll,
 //     sys, ocx, dylib or so, where "so" may be followed by numeric
 //     extensions (x.so.1, x.so.1.2.3; not x.so.abc, not x.dll.1); 7
 //     and 8 also files with no extension; 9 every file.
-//   - A file is analysed only if it is at least 512 bytes. PE: "MZ",
+//   - A file is analyzed only if it is at least 512 bytes. PE: "MZ",
 //     e_lfanew at 0x3C, "PE\0\0" there, and the file must hold 512
 //     bytes from e_lfanew; the machine field selects the filter: 014C
 //     and 8664 x86, 01C0 and 01C2 ARM, 01C4 ARMT, AA64 ARM64, 0200
 //     IA64; others (PPC, RISC-V) none. ELF: class 1 or 2, data 1 or 2
 //     (the machine is read in that byte order), EI_VERSION 1, any
 //     e_type; machine 3 and 3E x86, 28 ARM, B7 ARM64; others none.
-//     Mach-O: little-endian magic FEEDFACE/FEEDFACF only; cputype 7 and
+//     Mach-O: little-endian magic FEEDFACE/FEEDFACF only; cpu type 7 and
 //     01000007 x86, C ARM, 0100000C ARM64; fat binaries none.
 //   - x86 gets BCJ at levels 1..7 and BCJ2 at 8 and 9. -mx0 (Copy)
 //     applies no analysis; -m0=Copy at other levels does, one folder
@@ -51,6 +52,7 @@ const (
 // exeKind is the result of the analysis.
 type exeKind int
 
+// noinspection GoUnusedConst
 const (
 	exeNone  exeKind = iota
 	exeARM64         // group order observed: none, ARM64, RISCV, x86, IA64, ARM, ARMT
@@ -71,48 +73,63 @@ func (k exeKind) omittedConverter() bool {
 	return k == exePPC || k == exeSPARC || k == exeIA64
 }
 
-// analysisWanted says whether a file name is analysed at the level.
+// analysisWanted says whether a file name is analyzed at the level.
 func analysisWanted(name string, level int) bool {
-	switch {
-	case level <= 4:
+	if level <= 4 {
 		return false
-	case level >= 9:
+	}
+	if level >= 9 {
 		return true
 	}
-	base := name
-	if i := strings.LastIndexAny(base, "/\\"); i >= 0 {
-		base = base[i+1:]
+	lower := strings.ToLower(name)
+	if i := strings.LastIndexAny(lower, "/\\"); i >= 0 {
+		lower = lower[i+1:]
 	}
-	lower := strings.ToLower(base)
 	dot := strings.LastIndexByte(lower, '.')
 	if dot < 0 {
 		return level >= 7
 	}
-	switch lower[dot+1:] {
-	case "exe", "dll", "sys", "ocx", "dylib", "so":
+	ext := lower[dot+1:]
+	if wantedExt(ext) {
 		return true
 	}
 	// x.so.1, x.so.1.2.3: numeric extensions after .so (observed; not
 	// x.so.abc, not x.dll.1).
-	for {
-		e := lower[dot+1:]
-		if e == "" {
-			return false
-		}
-		for _, c := range e {
-			if c < '0' || c > '9' {
-				return false
-			}
-		}
+	for isNumericExt(ext) {
 		lower = lower[:dot]
 		dot = strings.LastIndexByte(lower, '.')
 		if dot < 0 {
 			return false
 		}
-		if lower[dot+1:] == "so" {
+		ext = lower[dot+1:]
+		if ext == "so" {
 			return true
 		}
 	}
+	return false
+}
+
+// wantedExt is an extension analyzed at levels 5..8 (observed)
+func wantedExt(ext string) bool {
+	switch ext {
+	case "exe", "dll", "sys", "ocx", "dylib", "so":
+		return true
+	default:
+		return false
+	}
+}
+
+// isNumericExt is a non-empty extension made of digits only.
+func isNumericExt(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // analyzeExe inspects the head of a file (at least the first 512+
@@ -121,78 +138,106 @@ func analyzeExe(head []byte, size uint64) exeKind {
 	if size < 512 || len(head) < 4 {
 		return exeNone
 	}
-	if head[0] == 'M' && head[1] == 'Z' && len(head) >= 0x40 {
-		off := uint64(binary.LittleEndian.Uint32(head[0x3C:]))
-		if off+512 > size || off+6 > uint64(len(head)) {
-			return exeNone
-		}
-		if string(head[off:off+4]) != "PE\x00\x00" {
-			return exeNone
-		}
-		switch binary.LittleEndian.Uint16(head[off+4:]) {
-		case 0x014C, 0x8664:
-			return exeX86
-		case 0x01C0, 0x01C2:
-			return exeARM
-		case 0x01C4:
-			return exeARMT
-		case 0xAA64:
-			return exeARM64
-		case 0x0200:
-			return exeIA64
-		case 0x5032, 0x5064:
-			return exeRISCV // observed: grouped, no filter (5128 is none)
-		}
+	if head[0] == 'M' && head[1] == 'Z' {
+		return analyzePE(head, size)
+	}
+	if head[0] == 0x7F && head[1] == 'E' && head[2] == 'L' && head[3] == 'F' {
+		return analyzeELF(head)
+	}
+	return analyzeMacho(head)
+}
+
+// analyzePE is the PE branch: "MZ", e_lfanew at 0x3C, "PE\0\0" there, and
+// the file must hold 512 bytes from e_lfanew; the machine field selects
+// the filter.
+func analyzePE(head []byte, size uint64) exeKind {
+	if len(head) < 0x40 {
 		return exeNone
 	}
-	if head[0] == 0x7F && head[1] == 'E' && head[2] == 'L' && head[3] == 'F' && len(head) >= 20 {
-		class, data, version := head[4], head[5], head[6]
-		if (class != 1 && class != 2) || (data != 1 && data != 2) || version != 1 {
-			return exeNone
-		}
-		var machine uint16
+	off := uint64(binary.LittleEndian.Uint32(head[0x3C:]))
+	if off+512 > size || off+6 > uint64(len(head)) {
+		return exeNone
+	}
+	if string(head[off:off+4]) != "PE\x00\x00" {
+		return exeNone
+	}
+	switch binary.LittleEndian.Uint16(head[off+4:]) {
+	case 0x014C, 0x8664:
+		return exeX86
+	case 0x01C0, 0x01C2:
+		return exeARM
+	case 0x01C4:
+		return exeARMT
+	case 0xAA64:
+		return exeARM64
+	case 0x0200:
+		return exeIA64
+	case 0x5032, 0x5064:
+		return exeRISCV // observed: grouped, no filter (5128 is none)
+	}
+	return exeNone
+}
+
+// analyzeELF is the ELF branch: class 1 or 2, data 1 or 2 (the machine
+// is read in that byte order), EI_VERSION 1, any e_type; the machine
+// field selects the filter.
+func analyzeELF(head []byte) exeKind {
+	if len(head) < 20 {
+		return exeNone
+	}
+	class, data, version := head[4], head[5], head[6]
+	if (class != 1 && class != 2) || (data != 1 && data != 2) || version != 1 {
+		return exeNone
+	}
+	var machine uint16
+	if data == 1 {
+		machine = binary.LittleEndian.Uint16(head[18:])
+	} else {
+		machine = binary.BigEndian.Uint16(head[18:])
+	}
+	// Observed: x86 and SPARC in either byte order; ARM, ARM64 and RISC-V
+	// only little-endian (data 1); PPC only big-endian (data 2); IA64 none.
+	switch machine {
+	case 3, 0x3E:
+		return exeX86
+	case 2, 0x2B:
+		return exeSPARC
+	case 0x28:
 		if data == 1 {
-			machine = binary.LittleEndian.Uint16(head[18:])
-		} else {
-			machine = binary.BigEndian.Uint16(head[18:])
+			return exeARM
 		}
-		// Observed: x86 in either byte order; ARM, ARM64 and RISC-V only
-		// little-endian; PPC only big-endian; SPARC in either; IA64 none.
-		switch machine {
-		case 3, 0x3E:
-			return exeX86
-		case 0x28:
-			if data == 1 {
-				return exeARM
-			}
-		case 0xB7:
-			if data == 1 {
-				return exeARM64
-			}
-		case 0xF3:
-			if data == 1 {
-				return exeRISCV
-			}
-		case 0x14, 0x15:
-			if data == 2 {
-				return exePPC
-			}
-		case 2, 0x2B:
-			return exeSPARC
+	case 0xB7:
+		if data == 1 {
+			return exeARM64
 		}
+	case 0xF3:
+		if data == 1 {
+			return exeRISCV
+		}
+	case 0x14, 0x15:
+		if data == 2 {
+			return exePPC
+		}
+	}
+	return exeNone
+}
+
+// analyzeMacho is the Mach-O branch: the little-endian magic FEEDFACE or
+// FEEDFACF; the cpu type selects the filter, and a fat binary (a big-endian
+// magic) is none.
+func analyzeMacho(head []byte) exeKind {
+	if len(head) < 8 {
 		return exeNone
 	}
-	if len(head) >= 8 {
-		magic := binary.LittleEndian.Uint32(head)
-		if magic == 0xFEEDFACE || magic == 0xFEEDFACF {
-			switch binary.LittleEndian.Uint32(head[4:]) {
-			case 7, 0x01000007:
-				return exeX86
-			case 0xC:
-				return exeARM
-			case 0x0100000C:
-				return exeARM64
-			}
+	switch binary.LittleEndian.Uint32(head) {
+	case 0xFEEDFACE, 0xFEEDFACF:
+		switch binary.LittleEndian.Uint32(head[4:]) {
+		case 7, 0x01000007:
+			return exeX86
+		case 0xC:
+			return exeARM
+		case 0x0100000C:
+			return exeARM64
 		}
 	}
 	return exeNone
@@ -229,6 +274,8 @@ func kindFilter(k exeKind, level int, version int) (filterID uint32, filter Filt
 		return MethodARMT, ARMT, false
 	case exePPC, exeSPARC, exeIA64:
 		return 0, NoFilter, true
+	default:
+		// exeNone, and exeARM64/exeRISCV under an older -myv: no filter.
 	}
 	return 0, NoFilter, false
 }
@@ -244,6 +291,8 @@ func kindLcLpPb(k exeKind) (lc, lp, pb int, ok bool) {
 		return 2, 1, 2, true
 	case exeIA64:
 		return 0, 4, 4, true
+	default:
+		// Other kinds: the defaults stay.
 	}
 	return 0, 0, 0, false
 }
@@ -264,10 +313,10 @@ func analyzeFile(path string, size uint64) (exeKind, error) {
 	if err != nil {
 		return exeNone, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	head := make([]byte, 1<<16)
 	n, err := io.ReadFull(f, head)
-	if err != nil && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return exeNone, err
 	}
 	head = head[:n]
