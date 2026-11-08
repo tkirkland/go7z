@@ -111,7 +111,7 @@ func (s *Sum) Add(d []byte) {
 
 // Format prints the sum; withCount appends the carry count (observed:
 // when the number of items summed is not 1).
-func (s Sum) Format(a Algorithm, withCount bool) string {
+func (s *Sum) Format(a Algorithm, withCount bool) string {
 	out := a.FormatDigest(s.Digest)
 	if withCount {
 		out += fmt.Sprintf("-%08X", s.Carry)
@@ -139,9 +139,9 @@ type Bundle struct {
 }
 
 // NewBundle returns an empty bundle for the algorithms.
-func NewBundle(algs []Algorithm) *Bundle {
-	b := &Bundle{Algorithms: algs}
-	for _, a := range algs {
+func NewBundle(algo []Algorithm) *Bundle {
+	b := &Bundle{Algorithms: algo}
+	for _, a := range algo {
 		b.Data = append(b.Data, newSum(a.DigestSize))
 		b.DataNames = append(b.DataNames, newSum(a.DigestSize))
 	}
