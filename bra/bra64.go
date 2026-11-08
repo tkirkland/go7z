@@ -16,8 +16,6 @@ import (
 // of data[0]. It returns the number of bytes processed (len(data)
 // rounded down to a multiple of 4).
 func ARM64Convert(data []byte, pc uint32, encoding bool) int {
-	const flag = uint32(1) << (24 - 4)
-	const mask = (uint32(1) << 24) - (flag << 1)
 	lim := len(data) &^ 3
 	// BR_PC_INIT with BR_CONV_USE_OPT_PC_PTR: BR_PC_GET at position p
 	// is pc + p; pc -= 4 because p points to the next instruction.
@@ -30,37 +28,59 @@ func ARM64Convert(data []byte, pc uint32, encoding bool) int {
 		v := binary.LittleEndian.Uint32(data[p:])
 		p += 4
 		if (v-0x94000000)&0xfc000000 == 0 {
-			c := (pc + uint32(p)) >> 2
-			if encoding {
-				v += c
-			} else {
-				v -= c
-			}
-			v &= 0x03ffffff
-			v |= 0x94000000
-			binary.LittleEndian.PutUint32(data[p-4:], v)
-			continue
-		}
-		v -= 0x90000000
-		if v&0x9f000000 == 0 {
-			v += flag
-			if v&mask != 0 {
-				continue
-			}
-			z := (v & 0xffffffe0) | (v >> 26)
-			c := ((pc + uint32(p)) >> (12 - 3)) &^ 7
-			if encoding {
-				z += c
-			} else {
-				z -= c
-			}
-			v &= 0x1f
-			v |= 0x90000000
-			v |= z << 26
-			v |= 0x00ffffe0 & ((z & ((flag << 1) - 1)) - flag)
-			binary.LittleEndian.PutUint32(data[p-4:], v)
+			arm64Bl(data, p, pc, encoding, v)
+		} else {
+			arm64Adrp(data, p, pc, encoding, v)
 		}
 	}
+}
+
+// arm64Bl is the BL case of z7_BranchConv_ARM64: top six bits 100101
+// (0x94000000..0x97ffffff); the 26-bit imm offset is scaled by 4, so
+// the offset is added to the address shifted by 2.
+func arm64Bl(data []byte, p int, pc uint32, encoding bool, v uint32) {
+	c := (pc + uint32(p)) >> 2
+	if encoding {
+		v += c
+	} else {
+		v -= c
+	}
+	v &= 0x03ffffff
+	v |= 0x94000000
+	binary.LittleEndian.PutUint32(data[p-4:], v)
+}
+
+// arm64Adrp is the ADRP case of z7_BranchConv_ARM64: the instruction
+// test (v-0x90000000)&0x9f000000 == 0 is adrp's fixed bits (1 immlo
+// 10000 immhi Rd); z is the page offset in 4 KiB units, which the
+// converter re-anchors to its own page. The instruction is left alone
+// when it is not an ADRP or when its page offset is outside the window
+// the converter handles.
+func arm64Adrp(data []byte, p int, pc uint32, encoding bool, v uint32) {
+	// flag and mask are Bra.c's page-window test: once flag is added,
+	// any bit left in mask means the offset is outside the window.
+	const flag = uint32(1) << (24 - 4)
+	const mask = (uint32(1) << 24) - (flag << 1)
+	v -= 0x90000000
+	if v&0x9f000000 != 0 {
+		return
+	}
+	v += flag
+	if v&mask != 0 {
+		return
+	}
+	z := (v & 0xffffffe0) | (v >> 26)
+	c := ((pc + uint32(p)) >> (12 - 3)) &^ 7
+	if encoding {
+		z += c
+	} else {
+		z -= c
+	}
+	v &= 0x1f
+	v |= 0x90000000
+	v |= z << 26
+	v |= 0x00ffffe0 & ((z & ((flag << 1) - 1)) - flag)
+	binary.LittleEndian.PutUint32(data[p-4:], v)
 }
 
 // ARM64Encode converts a whole buffer in place as the 7z ARM64 encoder
