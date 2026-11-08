@@ -203,102 +203,26 @@ func X86DecodeBytes(data []byte) []byte {
 	return out
 }
 
-// x86Reader applies the converter to a stream in chunks the way 7-Zip's
-// filter coder does: each chunk is converted as far as the converter
-// goes, the unprocessed tail is kept for the next chunk, and pc advances
-// by the bytes passed on. The converter is defined so that this gives
-// the same bytes as one call over the whole stream (Bra.h, "Example
-// code for conversion in loop"); the tail left at end of input is
-// passed through unconverted.
-type x86Reader struct {
-	r        io.Reader
-	encoding bool
-	pc       uint32
-	state    uint32
-	buf      []byte // buf[out:n] is ready to return; buf[n:end] is the unprocessed tail
-	out, n   int
-	end      int
-	eof      bool
-	err      error
+// x86Conv returns X86Convert ready for one stream: it holds the mask
+// the converter carries between calls (Bra86.c's state argument, started
+// at X86StateInit), so bra.go's convReader can drive it as a plain
+// converter. The chunking that closure allows is what 7-Zip's filter
+// coder does, and the converter is defined so that it gives the same
+// bytes as one call over the whole stream (Bra.h, "Example code for
+// conversion in loop").
+func x86Conv(encoding bool) func(data []byte, pc uint32) int {
+	state := X86StateInit
+	return func(data []byte, pc uint32) int { return X86Convert(data, pc, &state, encoding) }
 }
 
-const x86ReaderChunk = 1 << 16
-
 // NewX86EncodeReader returns a reader that yields r's bytes converted
-// by the x86 BCJ encoder.
+// by the x86 BCJ encoder, chunk by chunk as 7-Zip's filter coder does.
 func NewX86EncodeReader(r io.Reader) io.Reader {
-	return &x86Reader{r: r, encoding: true, state: X86StateInit, buf: make([]byte, x86ReaderChunk+8)}
+	return newConvReader(r, x86Conv(true))
 }
 
 // NewX86DecodeReader returns a reader that yields r's bytes converted
 // by the x86 BCJ decoder.
 func NewX86DecodeReader(r io.Reader) io.Reader {
-	return &x86Reader{r: r, encoding: false, state: X86StateInit, buf: make([]byte, x86ReaderChunk+8)}
-}
-
-func (x *x86Reader) Read(p []byte) (int, error) {
-	for x.out == x.n {
-		if x.err != nil {
-			return 0, x.err
-		}
-		if x.eof {
-			// Pass the unconverted tail through, then report EOF.
-			if x.n < x.end {
-				x.out, x.n = x.n, x.end
-				break
-			}
-			x.err = io.EOF
-			return 0, io.EOF
-		}
-		x.fillBuf()
-		if x.err != nil && x.end == 0 {
-			return 0, x.err
-		}
-		x.convert()
-		if x.applyErr() {
-			return 0, x.err
-		}
-	}
-	m := copy(p, x.buf[x.out:x.n])
-	x.out += m
-	return m, nil
-}
-
-// fillBuf shifts the unprocessed tail down to the buffer start and reads
-// more input until the buffer is full, EOF was seen or an error arrived.
-func (x *x86Reader) fillBuf() {
-	tail := copy(x.buf, x.buf[x.n:x.end])
-	x.out, x.n, x.end = 0, 0, tail
-	for x.end < len(x.buf) && !x.eof {
-		m, err := x.r.Read(x.buf[x.end:])
-		x.end += m
-		if err == io.EOF {
-			x.eof = true
-		} else if err != nil {
-			x.err = err
-			x.eof = true
-		}
-		if m > 0 || err != nil {
-			break
-		}
-	}
-}
-
-// convert runs the converter over the filled buffer and advances the
-// virtual program counter by the number of bytes it processed.
-func (x *x86Reader) convert() {
-	processed := X86Convert(x.buf[:x.end], x.pc, &x.state, x.encoding)
-	x.pc += uint32(processed)
-	x.n = processed
-}
-
-// applyErr forces the whole buffer through the converter when the stream
-// already ended: nothing may stay unconverted past the error. It returns
-// true when the buffer is empty and the error must be reported now.
-func (x *x86Reader) applyErr() bool {
-	if x.err == nil {
-		return false
-	}
-	x.n = x.end
-	return x.n == 0
+	return newConvReader(r, x86Conv(false))
 }
